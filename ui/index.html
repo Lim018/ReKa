@@ -156,6 +156,13 @@ textarea.field { min-height: 112px; resize: vertical; line-height: var(--lh-norm
 .pill.toggle input:checked::before { transform: translateX(12px); background: var(--color-on-primary); }
 .pill.toggle input:disabled { opacity: .45; cursor: not-allowed; }
 .pill.toggle .state { color: var(--color-text); font: var(--w-semibold) var(--text-sm) var(--font-mono); min-width: 24px; }
+.pill:has(select:disabled), .pill:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+.pill:has(select:disabled) select { cursor: not-allowed; }
+.engines { grid-column: 1 / -1; }
+.engine-row { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; gap: var(--space-4); align-items: center; padding: var(--space-4); border-bottom: 1px solid var(--color-border); }
+.engine-row b { font: var(--w-semibold) var(--text-md) var(--font-heading); }
+.engine-row .desc { display: grid; gap: var(--space-1); font-size: var(--text-sm); color: var(--color-text-muted); min-width: 0; }
+.engine-row .desc code { color: var(--color-text); overflow-wrap: anywhere; }
 
 /* Status lamp: red safelight while developing, green when printed */
 .stamp { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 32px; padding: 0 var(--space-3); border: 1px solid currentColor; border-radius: var(--radius-full);
@@ -448,6 +455,7 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
   .phase { grid-template-columns: minmax(0, 1fr); gap: var(--space-5); }
   .timer { grid-template-columns: auto 1fr; align-items: baseline; gap: var(--space-3); }
   .kv { grid-template-columns: minmax(0, 1fr); }
+  .engine-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
   .kv dt { border-right: 0; border-bottom: 0; padding-bottom: 0; }
   .views .open { display: none; }
 }
@@ -524,7 +532,7 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
       <section id="newView" hidden>
         <div class="page-head">
           <span class="sheet-ico lg amber">+</span>
-          <div><h1>Desain baru</h1><p>Diproses Claude Code di komputer ini. Generate biasanya 10–20 menit.</p></div>
+          <div><h1>Desain baru</h1><p>Diproses di komputer ini oleh Claude Code atau Antigravity. Generate biasanya 10–20 menit.</p></div>
         </div>
         <form class="order" id="jobForm" novalidate>
           <div>
@@ -581,9 +589,10 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
               <span class="num" aria-hidden="true"></span>
               <legend class="lab">Mesin</legend>
               <div class="ctl">
-                <p class="hint">Disimpan di browser ini dan dipakai lagi di form “Lanjutkan session”.</p>
+                <p class="hint">Disimpan di browser ini. Proyek tetap memakai mesin yang membuatnya, karena session-nya milik mesin itu.</p>
                 <div class="engine">
-                  <label class="pill" title="Model Claude">Model<select name="model" aria-label="Model"></select></label>
+                  <label class="pill" title="Mesin AI yang menjalankan skill">Mesin<select name="engine" aria-label="Mesin"></select></label>
+                  <label class="pill" title="Model">Model<select name="model" aria-label="Model"></select></label>
                   <label class="pill" title="Seberapa dalam Claude berpikir">Effort<select name="effort" aria-label="Effort"></select></label>
                   <label class="pill toggle">Caveman<input type="checkbox" name="caveman" role="switch" aria-label="Pakai caveman"><span class="state">On</span></label>
                 </div>
@@ -607,16 +616,32 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
       <section id="settingsView" hidden>
         <div class="page-head">
           <span class="sheet-ico lg muted">⚙</span>
-          <div><h1>Pengaturan</h1><p>Akun Claude Code yang dipakai server ini untuk generate.</p></div>
+          <div><h1>Pengaturan</h1><p>Mesin AI dan akun yang dipakai server ini untuk generate.</p></div>
         </div>
         <div class="settings">
+          <section class="panel engines" aria-labelledby="engTitle">
+            <header><h2 id="engTitle">Mesin AI</h2>
+              <label class="pill" title="Mesin yang dipilih otomatis di form Desain baru">Default<select id="defaultEngine" aria-label="Mesin default"></select></label>
+            </header>
+            <div class="engine-row">
+              <b>Claude Code</b>
+              <span class="desc" id="claudeDesc">Memuat…</span>
+              <span class="ok-txt" id="claudeState" hidden>Siap</span>
+            </div>
+            <div class="engine-row">
+              <b>Antigravity CLI</b>
+              <span class="desc" id="agyDesc">Memuat…</span>
+              <button class="btn btn-sm" type="button" id="agyCheck">Cek ulang</button>
+            </div>
+            <p class="note">Antigravity memakai akun Google Anda sendiri dengan kuota terpisah. Izin dibatasi sama seperti Claude Code: hanya script ReKa dan menulis di folder proyek. Effort dan caveman hanya tersedia di Claude Code.</p>
+          </section>
           <section class="panel" aria-labelledby="accTitle">
-            <header><h2 id="accTitle">Akun</h2><span class="k">claude auth status</span></header>
+            <header><h2 id="accTitle">Akun Claude</h2><span class="k">claude auth status</span></header>
             <dl class="kv" id="accountKv"><dt>Status</dt><dd>Memuat…</dd></dl>
             <p class="note">Untuk ganti akun, jalankan <code>claude auth logout</code> lalu <code>claude auth login</code> di terminal, kemudian buka ulang halaman ini.</p>
           </section>
           <section class="panel" aria-labelledby="useTitle">
-            <header><h2 id="useTitle">Pemakaian langganan</h2><button class="btn btn-sm" type="button" id="usageBtn">Cek sekarang</button></header>
+            <header><h2 id="useTitle">Pemakaian langganan Claude</h2><button class="btn btn-sm" type="button" id="usageBtn">Cek sekarang</button></header>
             <div class="meters" id="usageBox"></div>
             <p class="note" id="usageNote"></p>
           </section>
@@ -671,16 +696,16 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
             <form class="panel" id="reviseForm" hidden novalidate>
               <div class="pad composer">
                 <label class="lab" for="instruction">Lanjutkan session</label>
-                <p class="hint">Claude mengingat seluruh percakapan proyek ini. Minta perubahan atau tanyakan alasan sebuah keputusan desain.</p>
+                <p class="hint">Mesin AI mengingat seluruh percakapan proyek ini. Minta perubahan atau tanyakan alasan sebuah keputusan desain.</p>
                 <div class="chips" id="suggestBox" hidden><span>Saran langkah berikutnya</span><div class="chips" id="suggestions"></div></div>
                 <textarea class="field" id="instruction" name="instruction" placeholder="Contoh: ganti primary jadi biru, tambah section FAQ" style="min-height:96px"></textarea>
                 <div class="engine">
-                  <label class="pill" title="Model Claude">Model<select name="model" aria-label="Model"></select></label>
+                  <label class="pill" title="Model">Model<select name="model" aria-label="Model"></select></label>
                   <label class="pill" title="Seberapa dalam Claude berpikir">Effort<select name="effort" aria-label="Effort"></select></label>
                   <label class="pill toggle">Caveman<input type="checkbox" name="caveman" role="switch" aria-label="Pakai caveman"><span class="state">On</span></label>
                 </div>
                 <p class="error" id="reviseError" role="alert"></p>
-                <div class="send"><span class="small" style="margin:0">Revisi biasanya 2–10 menit.</span><button class="btn btn-primary" type="submit">Kirim <kbd>⌘↵</kbd></button></div>
+                <div class="send"><span class="small" style="margin:0" id="composerNote">Revisi biasanya 2–10 menit.</span><button class="btn btn-primary" type="submit">Kirim <kbd>⌘↵</kbd></button></div>
               </div>
             </form>
             <div class="panel" id="busyNote" hidden>
@@ -692,7 +717,7 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
               <ul class="files" id="files"></ul>
             </section>
             <section class="panel" id="sessionBox" hidden aria-labelledby="sessTitle">
-              <header><h2 id="sessTitle">Session Claude Code</h2></header>
+              <header><h2 id="sessTitle">Session</h2></header>
               <div class="pad">
                 <p class="small">Buka di terminal untuk melanjutkan percakapan yang sama secara interaktif. Hindari mengirim pesan dari UI selama session itu masih terbuka di terminal.</p>
                 <div class="cmd"><code id="sessionCmd"></code><button class="btn btn-sm" type="button" id="copyCmd"><svg class="i"><use href="#i-copy"/></svg><span>Salin</span></button></div>
@@ -716,27 +741,57 @@ const SPECIAL = {
 };
 const isProject = (t) => t !== 'home' && !SPECIAL[t];
 let openSpecial = [];     // SPECIAL keys open as tabs
-// Model/effort pickers shared by both forms. '' = Claude Code's own default.
+// Engine/model/effort/caveman pickers. '' = the engine's own default. Effort and caveman exist only for
+// Claude Code; Antigravity's models come from `agy models` via the server.
+const ENGINE_LABEL = { claude: 'Claude Code', antigravity: 'Antigravity' };
 const MODELS = [['', 'Default'], ['opus', 'Opus 5.5'], ['sonnet', 'Sonnet 5.5'], ['haiku', 'Haiku 5.5']];
 const EFFORTS = [['', 'Default'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
-const MODEL_NAMES = Object.fromEntries(MODELS);
 const EFFORT_NAMES = Object.fromEntries(EFFORTS);
-let runOpts = { model: '', effort: '', caveman: true };
+let agyStatus = { ready: false, pending: true, models: [] };
+let runOpts = { engine: 'claude', model: '', effort: '', caveman: true, agyModel: '' };
 let cavemanInstalled = true;
 try { runOpts = { ...runOpts, ...JSON.parse(localStorage.getItem('reka.runopts') || '{}') }; } catch {}
 const saveRunOpts = () => { try { localStorage.setItem('reka.runopts', JSON.stringify(runOpts)); } catch {} };
-function setupRunOptions(formEl) {
-  for (const [name, list] of [['model', MODELS], ['effort', EFFORTS]]) {
-    const sel = formEl.querySelector(`select[name=${name}]`);
-    sel.innerHTML = list.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
-    sel.value = list.some(([v]) => v === runOpts[name]) ? runOpts[name] : '';
-    sel.onchange = () => {
-      runOpts[name] = sel.value;
+const modelList = (engine) => (engine === 'antigravity' ? [['', 'Default'], ...agyStatus.models.map((m) => [m.id, m.name])] : MODELS);
+const modelKey = (engine) => (engine === 'antigravity' ? 'agyModel' : 'model');
+const modelLabel = (engine, model) => modelList(engine).find(([v]) => v === model)?.[1] ?? model;
+const usableEngine = (engine) => (engine === 'antigravity' && !agyStatus.ready ? 'claude' : engine);
+
+// Fill one form's pills for the engine it runs on (the new-design form picks it; a project keeps its own).
+function setupRunOptions(formEl, engine) {
+  formEl.dataset.engine = engine;
+  const isAgy = engine === 'antigravity';
+  const engineSel = formEl.querySelector('select[name=engine]');
+  if (engineSel) {
+    const agyNote = agyStatus.ready ? '' : agyStatus.pending ? ' (mengecek…)' : ' (belum siap)';
+    engineSel.innerHTML = Object.entries(ENGINE_LABEL).map(([v, l]) =>
+      `<option value="${v}"${v === 'antigravity' && !agyStatus.ready ? ' disabled' : ''}>${l}${v === 'antigravity' ? agyNote : ''}</option>`).join('');
+    engineSel.value = engine;
+    engineSel.onchange = () => {
+      runOpts.engine = engineSel.value;
       saveRunOpts();
-      document.querySelectorAll(`select[name=${name}]`).forEach((s) => (s.value = sel.value));
+      setupRunOptions(formEl, engineSel.value);
       renderTicket();
     };
   }
+  const modelSel = formEl.querySelector('select[name=model]');
+  const list = modelList(engine);
+  modelSel.innerHTML = list.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+  modelSel.value = list.some(([v]) => v === runOpts[modelKey(engine)]) ? runOpts[modelKey(engine)] : '';
+  modelSel.onchange = () => {
+    runOpts[modelKey(engine)] = modelSel.value;
+    saveRunOpts();
+    syncPeers(formEl);
+  };
+  const effortSel = formEl.querySelector('select[name=effort]');
+  effortSel.innerHTML = isAgy ? '<option value="">N/A</option>' : EFFORTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  effortSel.disabled = isAgy;
+  effortSel.value = !isAgy && EFFORTS.some(([v]) => v === runOpts.effort) ? runOpts.effort : '';
+  effortSel.onchange = () => {
+    runOpts.effort = effortSel.value;
+    saveRunOpts();
+    syncPeers(formEl);
+  };
   const cb = formEl.querySelector('input[name=caveman]');
   cb.onchange = () => {
     runOpts.caveman = cb.checked;
@@ -746,15 +801,25 @@ function setupRunOptions(formEl) {
   };
   syncCaveman();
 }
+// Keep the other form showing the same remembered choice when it runs on the same engine.
+function syncPeers(changed) {
+  for (const f of [form, $('#reviseForm')]) if (f !== changed && f.dataset.engine === changed.dataset.engine) setupRunOptions(f, f.dataset.engine);
+  renderTicket();
+}
 function syncCaveman() {
   document.querySelectorAll('input[name=caveman]').forEach((c) => {
-    c.checked = cavemanInstalled && runOpts.caveman;
-    c.disabled = !cavemanInstalled;
-    c.nextElementSibling.textContent = !cavemanInstalled ? 'N/A' : c.checked ? 'On' : 'Off';
-    c.closest('.pill').title = cavemanInstalled ? 'Caveman: lapisan kompresi token (hook + MCP caveman)' : 'Caveman tidak terpasang di Claude Code ini';
+    const usable = cavemanInstalled && c.form?.dataset.engine !== 'antigravity';
+    c.checked = usable && runOpts.caveman;
+    c.disabled = !usable;
+    c.nextElementSibling.textContent = !usable ? 'N/A' : c.checked ? 'On' : 'Off';
+    c.closest('.pill').title = !cavemanInstalled ? 'Caveman tidak terpasang di Claude Code ini'
+      : usable ? 'Caveman: lapisan kompresi token (hook + MCP caveman)' : 'Caveman hanya tersedia di Claude Code';
   });
 }
-const readRunOptions = (formEl) => ({ model: formEl.model.value, effort: formEl.effort.value, caveman: formEl.caveman.checked });
+const readRunOptions = (formEl) => {
+  const engine = formEl.dataset.engine;
+  return { engine, model: formEl.model.value, effort: engine === 'claude' ? formEl.effort.value : '', caveman: engine === 'claude' && formEl.caveman.checked };
+};
 const DROP_TEXT = 'Tarik file ke sini atau <strong>klik untuk memilih</strong>. Format png, jpg, webp, atau html, maksimal 15MB.';
 
 let jobs = [];
@@ -938,7 +1003,7 @@ $('#search').oninput = renderHome;
 const form = $('#jobForm');
 $('#dropText').innerHTML = DROP_TEXT;
 const BRIEF = {
-  design: ['Brief', 'Satu kalimat sudah cukup. Claude akan menyimpulkan audiens, nada, konten, dan arah kreatifnya.'],
+  design: ['Brief', 'Satu kalimat sudah cukup. Mesin AI akan menyimpulkan audiens, nada, konten, dan arah kreatifnya.'],
   redesign: ['Arah perubahan (opsional)', 'Kosongkan untuk modernisasi umum: hierarki, keterbacaan, dan aksesibilitas.'],
 };
 const PLACEHOLDER = {
@@ -961,14 +1026,16 @@ function renderTicket() {
   const outputs = [...form.querySelectorAll('[name=outputs]:checked')].map((c) => c.value);
   const redesign = form.mode.value === 'redesign';
   const source = form.source.value.trim().replace(/^https?:\/\//, '') || pickedFile?.name || '';
-  const model = [MODEL_NAMES[form.model.value] || 'Default', form.effort.value ? `effort ${EFFORT_NAMES[form.effort.value].toLowerCase()}` : null].filter(Boolean).join(' · ');
+  const engine = form.dataset.engine || 'claude';
+  const model = [modelLabel(engine, form.model.value) || 'Default', engine === 'claude' && form.effort.value ? `effort ${EFFORT_NAMES[form.effort.value].toLowerCase()}` : null].filter(Boolean).join(' · ');
   const rows = [
     ['Mode', redesign ? 'Redesign' : 'Design', redesign ? 'r' : ''],
     ['Platform', form.platform.value === 'mobile' ? 'Mobile app' : 'Web', ''],
     redesign && ['Sumber', source || 'belum diisi', source ? 'mono' : 'empty'],
     ['Output', outputs.join(', ') || 'pilih minimal satu', outputs.length ? '' : 'empty r'],
+    ['Mesin', ENGINE_LABEL[engine], ''],
     ['Model', model, ''],
-    ['Caveman', !cavemanInstalled ? 'N/A' : form.caveman.checked ? 'On' : 'Off', ''],
+    engine === 'claude' && ['Caveman', !cavemanInstalled ? 'N/A' : form.caveman.checked ? 'On' : 'Off', ''],
     ['Folder', 'output/<tanggal>-<judul>/', 'mono empty'],
   ].filter(Boolean);
   $('#ticket').innerHTML = rows.map(([k, v, cls]) => `<dt>${k}</dt><dd class="${cls}">${esc(v)}</dd>`).join('');
@@ -1013,7 +1080,7 @@ form.onsubmit = async (e) => {
     }
     const { id } = await api('/api/jobs', { method: 'POST', body: JSON.stringify(body) });
     form.reset();
-    setupRunOptions(form);
+    setupRunOptions(form, usableEngine(runOpts.engine));
     pickedFile = null;
     $('#dropText').innerHTML = DROP_TEXT;
     syncForm();
@@ -1115,9 +1182,10 @@ async function renderJob(id) {
   const isRunning = job.status === 'running';
   $('#jobIco').outerHTML = sheetIco(job, 'lg').replace('class="sheet-ico', 'id="jobIco" class="sheet-ico');
   $('#jobTitle').textContent = job.title || job.id;
+  const engine = job.engine ?? 'claude';
   $('#jobMeta').innerHTML = [job.mode, job.platform === 'mobile' ? 'mobile app' : 'web', fmtDate(job.createdAt),
-    job.source?.replace(/^https?:\/\//, ''), job.outputs?.join(', '),
-    job.model && MODEL_NAMES[job.model], job.effort && `effort ${job.effort}`,
+    job.source?.replace(/^https?:\/\//, ''), job.outputs?.join(', '), engine === 'antigravity' ? 'Antigravity' : null,
+    job.model && modelLabel(engine, job.model), job.effort && `effort ${job.effort}`,
     job.caveman === true ? 'caveman' : job.caveman === false ? 'tanpa caveman' : null]
     .filter(Boolean).map((x) => `<li>${esc(x)}</li>`).join('');
   $('#jobStatus').className = `stamp ${job.status}`;
@@ -1129,7 +1197,10 @@ async function renderJob(id) {
   const canRevise = job.files.includes('tokens.json');
   $('#reviseForm').hidden = isRunning || !canRevise;
   $('#busyNote').hidden = !isRunning;
-  $('#reviseForm').querySelector('[type=submit]').disabled = running;
+  $('#reviseForm').querySelector('[type=submit]').disabled = running || (engine === 'antigravity' && !agyStatus.ready);
+  setupRunOptions($('#reviseForm'), engine);
+  $('#composerNote').textContent = `${ENGINE_LABEL[engine]} · revisi biasanya 2–10 menit.`;
+  $('#sessTitle').textContent = `Session ${ENGINE_LABEL[engine]}`;
 
   const url = (f) => jobUrl(job, f);
   const has = (f) => job.files.includes(f);
@@ -1188,7 +1259,7 @@ async function renderJob(id) {
   const r = job.cavemanReceipt;
   $('#cavemanReceipt').innerHTML = r
     ? `Caveman berjalan · ${r.events} event · mode ${esc(r.mode ?? '-')} · kompresi <b>${r.tokensBefore} → ${r.tokensAfter}</b> token`
-    : 'Caveman: tidak ada receipt untuk session ini.';
+    : engine === 'claude' ? 'Caveman: tidak ada receipt untuk session ini.' : '';
   const KIND = { 'index.html': 'HTML', 'design.md': 'aturan', 'tokens.json': 'token', 'suggestions.json': 'saran' };
   const files = job.files.filter((f) => !f.startsWith('input/') && !f.startsWith('review/'));
   $('#filesBox').hidden = !files.length;
@@ -1293,10 +1364,50 @@ async function loadAccount() {
       <dt>Metode login</dt><dd>${esc(acc.authMethod === 'claude.ai' ? 'Langganan Claude (claude.ai)' : acc.authMethod ?? '-')}</dd>`
       : `<dt>Status</dt><dd><span class="bad-txt">Belum login</span></dd><dt>Detail</dt><dd>${esc(acc.error ?? 'Jalankan claude auth login di terminal.')}</dd>`;
     renderUsage(usage);
+    $('#claudeDesc').innerHTML = acc.loggedIn
+      ? `<span>Langganan ${esc(acc.plan ? acc.plan.toUpperCase() : 'Claude')} · ${esc(acc.email ?? '')}</span><span>Model Opus, Sonnet, Haiku · effort · caveman</span>`
+      : `<span>${esc(acc.error ?? 'Belum login. Jalankan claude auth login di terminal.')}</span>`;
+    $('#claudeState').hidden = !acc.loggedIn;
+    renderEngines();
   } catch (e) {
     $('#accountKv').innerHTML = `<dt>Status</dt><dd class="error">${esc(e.message)}</dd>`;
   }
 }
+
+// ---- Engines ----
+function renderEngines() {
+  const a = agyStatus;
+  $('#agyDesc').innerHTML = a.pending ? '<span>Mengecek instalasi dan login…</span>'
+    : a.ready ? `<span class="ok-txt">Siap · agy ${esc(a.version ?? '')}</span><span>${a.models.map((m) => esc(m.name)).join(' · ')}</span>`
+    : `<span class="bad-txt">Belum siap</span><span>${esc(a.error ?? '')}${a.installed ? '' : ' · pasang Antigravity CLI (perintah <code>agy</code>) lalu login.'}</span>`;
+  $('#agyCheck').disabled = a.pending;
+  const def = $('#defaultEngine');
+  def.innerHTML = Object.entries(ENGINE_LABEL).map(([v, l]) => `<option value="${v}"${v === 'antigravity' && !a.ready ? ' disabled' : ''}>${l}</option>`).join('');
+  def.value = usableEngine(runOpts.engine);
+}
+async function loadEngines(check = false) {
+  try {
+    agyStatus = (await api(check ? '/api/engines/antigravity/check' : '/api/engines', check ? { method: 'POST' } : {})).antigravity;
+  } catch {
+    agyStatus = { ready: false, pending: false, models: [], error: 'Server tidak bisa dihubungi' };
+  }
+  setupRunOptions(form, usableEngine(runOpts.engine));
+  if (isProject(active) && jobById(active)) setupRunOptions($('#reviseForm'), jobById(active).engine ?? 'claude');
+  renderTicket();
+  renderEngines();
+  if (agyStatus.pending) setTimeout(loadEngines, 3000);
+}
+$('#agyCheck').onclick = () => {
+  agyStatus = { ...agyStatus, pending: true };
+  renderEngines();
+  loadEngines(true);
+};
+$('#defaultEngine').onchange = (e) => {
+  runOpts.engine = e.target.value;
+  saveRunOpts();
+  setupRunOptions(form, usableEngine(runOpts.engine));
+  renderTicket();
+};
 
 $('#accountBtn').onclick = () => show('settings');
 $('#sideUsage').onclick = () => show('settings');
@@ -1317,9 +1428,10 @@ $('#usageBtn').onclick = async () => {
 // Keep tab lamps and the contact sheet current while something is running.
 setInterval(() => { if (running) refresh(); }, 5000);
 
-setupRunOptions(form);
-setupRunOptions($('#reviseForm'));
+setupRunOptions(form, 'claude');
+setupRunOptions($('#reviseForm'), 'claude');
 syncForm();
+loadEngines();
 
 // Address-bar edits like #<project-id> or #settings switch tabs without a reload.
 window.addEventListener('hashchange', () => {

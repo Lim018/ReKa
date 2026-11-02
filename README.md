@@ -29,6 +29,13 @@ Karena itu:
   (`--resume`), sehingga Claude ingat seluruh percakapan proyek itu. Session yang sama bisa dibuka di
   terminal dengan perintah yang tampil di halaman proyek (`claude --resume <id>`). Session ini juga
   muncul di daftar `/resume` Claude Code untuk folder ini.
+- **Dua mesin:** Claude Code (`claude`, langganan Claude) atau Antigravity CLI (`agy`, akun Google Anda).
+  Pilih di form Desain baru, dan atur default-nya di Pengaturan → Mesin AI. Keduanya menjalankan skill
+  yang sama (`.agents/skills/design-generator` adalah symlink ke `.claude/skills/design-generator`)
+  dengan izin yang sama sempitnya. Untuk Antigravity, izin dikirim per run lewat
+  `--settings '{"permissions":{"allow":[...]}}'`: hanya script ReKa dan menulis di `output/<proyek>/`.
+  Aksi lain otomatis ditolak dan menghentikan run. Satu proyek tetap memakai mesin yang membuatnya.
+  Effort dan caveman hanya ada di Claude Code.
 - Riwayat setiap run tersimpan di `output/<proyek>/log.jsonl`.
 - Model (Opus/Sonnet/Haiku) dan effort (low–max) bisa dipilih per generate dan per pesan lanjutan.
   "Default" memakai setelan Claude Code Anda. Mengganti model di tengah session tetap mempertahankan konteks.
