@@ -24,6 +24,12 @@ Karena itu:
 - Izin Claude dibatasi: hanya menjalankan `node scripts/*.mjs`, menulis di `output/`, dan membaca file.
   Tidak ada Bash bebas maupun MCP server, supaya instruksi tersembunyi di halaman yang di-redesign tidak
   bisa menyuruh Claude melakukan hal lain.
+- **Satu proyek = satu session Claude Code.** Generate awal membuat session dengan ID tetap
+  (bernama `ReKa: <judul>`), dan setiap pesan lanjutan dari UI melanjutkan session tersebut
+  (`--resume`), sehingga Claude ingat seluruh percakapan proyek itu. Session yang sama bisa dibuka di
+  terminal dengan perintah yang tampil di halaman proyek (`claude --resume <id>`). Session ini juga
+  muncul di daftar `/resume` Claude Code untuk folder ini.
+- Riwayat setiap run tersimpan di `output/<proyek>/log.jsonl`.
 - Satu proses berjalan pada satu waktu, dengan batas 20 menit per proses.
 - Port bisa diganti: `PORT=5000 npm start`.
 

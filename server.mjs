@@ -3,9 +3,10 @@
 // requests from other hosts/origins.
 import { createServer } from 'node:http';
 import { spawn, execFile } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, createReadStream } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, statSync, createReadStream } from 'node:fs';
 import { join, resolve, extname, basename, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = join(ROOT, 'output');
@@ -36,6 +37,9 @@ const readMeta = (id) => {
   }
 };
 const writeMeta = (id, meta) => writeFileSync(metaPath(id), JSON.stringify(meta, null, 2));
+// Every progress line of every run in a project, so the history survives server restarts.
+const logPath = (id) => join(OUTPUT, id, 'log.jsonl');
+const INTERNAL_FILES = new Set(['job.json', 'log.jsonl']);
 
 // A job left "running" by a previous server process can never finish.
 for (const id of readdirSync(OUTPUT)) {
@@ -92,7 +96,8 @@ function listFiles(dir, prefix = '') {
 function jobSummary(id) {
   const dir = join(OUTPUT, id);
   const meta = readMeta(id) ?? { id, title: id, status: 'done', createdAt: statSync(dir).mtime.toISOString() };
-  return { ...meta, files: listFiles(dir).filter((f) => f !== 'job.json') };
+  const sessionCommand = meta.sessionId ? `cd '${ROOT}' && claude --resume ${meta.sessionId}` : null;
+  return { ...meta, sessionCommand, files: listFiles(dir).filter((f) => !INTERNAL_FILES.has(f)) };
 }
 
 function readBody(req) {
@@ -136,15 +141,18 @@ function describeTool(name, input = {}) {
 }
 
 function pushLog(id, entry) {
-  const job = live.get(id);
-  job.log.push(entry);
-  for (const res of job.listeners) res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  const line = JSON.stringify({ ...entry, at: new Date().toISOString() });
+  appendFileSync(logPath(id), line + '\n');
+  for (const res of live.get(id)?.listeners ?? []) res.write(`data: ${line}\n\n`);
 }
 
+// Each project is one real Claude Code session: the first run creates it with a fixed ID and later
+// runs resume it, so Claude keeps the whole conversation. The same session opens in a terminal with
+// `claude --resume <sessionId>` from the project root.
 // extractTarget: the only argument `scripts/extract.mjs` may be called with (null = extract not allowed).
 // Keeping Bash to these exact script invocations limits what instructions injected by a redesigned
 // page could make Claude do.
-function runClaude(id, prompt, { extractTarget = null, extraDir = null } = {}) {
+function runClaude(id, prompt, { label, sessionId, resume, sessionName, extractTarget = null, extraDir = null }) {
   const allowed = [
     'Read', 'Glob', 'Grep', 'Skill', 'Write(./output/**)', 'Edit(./output/**)',
     'Bash(node scripts/validate.mjs:*)', 'Bash(node scripts/render.mjs:*)',
@@ -153,7 +161,8 @@ function runClaude(id, prompt, { extractTarget = null, extraDir = null } = {}) {
   const args = [
     '-p', prompt,
     '--output-format', 'stream-json', '--verbose',
-    '--strict-mcp-config', '--no-session-persistence',
+    '--strict-mcp-config',
+    ...(resume ? ['--resume', sessionId] : ['--session-id', sessionId, '--name', sessionName]),
     '--permission-mode', 'dontAsk',
     '--tools', 'Bash,Read,Write,Edit,Glob,Grep,Skill',
     '--allowedTools', ...allowed,
@@ -161,8 +170,8 @@ function runClaude(id, prompt, { extractTarget = null, extraDir = null } = {}) {
   if (extraDir) args.push('--add-dir', extraDir);
 
   const proc = spawn('claude', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
-  live.set(id, { proc, log: [], listeners: new Set() });
-  pushLog(id, { kind: 'info', text: 'Claude Code dimulai…' });
+  live.set(id, { proc, listeners: new Set() });
+  pushLog(id, { kind: 'run', text: label });
 
   let buffer = '';
   let result = null;
@@ -336,12 +345,16 @@ async function createJob(req, res) {
     extractTarget && `Untuk ekstraksi jalankan persis: node scripts/extract.mjs ${extractTarget} output/${id}/source`,
     `Jangan bertanya ke user; ambil asumsi dan catat di design.md.`,
   ];
+  const title = brief.length > 80 ? brief.slice(0, 80).replace(/\s+\S*$/, '') + '…' : brief || label;
   const meta = {
-    id, title: brief.length > 80 ? brief.slice(0, 80).replace(/\s+\S*$/, '') + '…' : brief || label, mode, brief, source: source || null, upload: uploaded, outputs,
+    id, title, mode, brief, source: source || null, upload: uploaded, outputs,
+    sessionId: randomUUID(), extractTarget, extraDir,
     status: 'running', createdAt: new Date().toISOString(), revisions: [],
   };
   writeMeta(id, meta);
-  runClaude(id, lines.filter(Boolean).join('\n'), { extractTarget, extraDir });
+  runClaude(id, lines.filter(Boolean).join('\n'), {
+    label: 'Generate awal', sessionId: meta.sessionId, resume: false, sessionName: `ReKa: ${title}`, extractTarget, extraDir,
+  });
   sendJson(res, 201, { id });
 }
 
@@ -351,24 +364,43 @@ async function reviseJob(req, res, id) {
   if (!meta) throw new HttpError(404, 'Hasil tidak ditemukan');
   const { instruction } = await readBody(req);
   const text = String(instruction ?? '').trim().slice(0, 4000);
-  if (!text) throw new HttpError(400, 'Isi permintaan revisi');
+  if (!text) throw new HttpError(400, 'Isi pesan terlebih dahulu');
 
-  writeMeta(id, { ...meta, status: 'running', revisions: [...(meta.revisions ?? []), { at: new Date().toISOString(), instruction: text }] });
-  const prompt = [
-    `/design-generator`,
-    `Revisi desain yang sudah ada di folder output/${id}/ (baca tokens.json, design.md, dan index.html di sana terlebih dahulu).`,
-    `Permintaan revisi: ${text}`,
-    `Ikuti alur penyesuaian di bagian 7 supaya semua output tetap sinkron. Output yang diminta: ${(meta.outputs ?? OUTPUTS).join(', ')}.`,
-    `Jangan bertanya ke user.`,
-  ].join('\n');
-  runClaude(id, prompt);
+  // Projects made before sessions existed get a fresh session that starts from the files on disk.
+  const resume = Boolean(meta.sessionId);
+  const sessionId = meta.sessionId ?? randomUUID();
+  writeMeta(id, {
+    ...meta, sessionId, status: 'running',
+    revisions: [...(meta.revisions ?? []), { at: new Date().toISOString(), instruction: text }],
+  });
+  const outputs = (meta.outputs ?? OUTPUTS).join(', ');
+  const prompt = resume
+    ? [
+        `Pesan dari user: ${text}`,
+        ``,
+        `Jika ini permintaan perubahan, terapkan pada output/${id}/ dengan alur penyesuaian skill design-generator`,
+        `(tokens.json → validate → design.md → index.html → render ulang PNG), output: ${outputs}.`,
+        `Jika ini pertanyaan, jawab saja tanpa mengubah file. Jangan bertanya balik ke user.`,
+      ].join('\n')
+    : [
+        `/design-generator`,
+        `Revisi desain yang sudah ada di folder output/${id}/ (baca tokens.json, design.md, dan index.html di sana terlebih dahulu).`,
+        `Permintaan revisi: ${text}`,
+        `Ikuti alur penyesuaian di bagian 7 supaya semua output tetap sinkron. Output yang diminta: ${outputs}.`,
+        `Jangan bertanya ke user.`,
+      ].join('\n');
+  runClaude(id, prompt, {
+    label: `Pesan: ${text}`, sessionId, resume, sessionName: `ReKa: ${meta.title ?? id}`,
+    extractTarget: meta.extractTarget ?? null, extraDir: meta.extraDir ?? null,
+  });
   sendJson(res, 202, { id });
 }
 
 function streamEvents(req, res, id) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
   const job = live.get(id);
-  for (const entry of job?.log ?? []) res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  const history = existsSync(logPath(id)) ? readFileSync(logPath(id), 'utf8').split('\n').filter(Boolean) : [];
+  for (const line of history) res.write(`data: ${line}\n\n`);
   if (job?.proc) {
     job.listeners.add(res);
     req.on('close', () => job.listeners.delete(res));

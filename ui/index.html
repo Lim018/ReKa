@@ -170,6 +170,11 @@ details[open] summary { margin-bottom: 12px; }
 .log li { padding: 3px 0; border-bottom: 1px solid var(--border); white-space: pre-wrap; word-break: break-word; }
 .log li:last-child { border-bottom: 0; }
 .log .tool b { color: var(--primary); font-weight: 600; }
+.log .run { border-bottom: 0; padding-top: 14px; color: var(--text); font: 600 12px/1.5 var(--font); display: flex; gap: 8px; }
+.log .run:first-child { padding-top: 0; }
+.log .run time { color: var(--muted); font-weight: 400; }
+.cmd { display: flex; gap: 8px; align-items: stretch; }
+.cmd code { flex: 1; min-width: 0; background: var(--chrome); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font: 12px/1.5 var(--mono); overflow-x: auto; white-space: nowrap; }
 .log .warn { color: var(--warn); } .log .error { color: var(--danger); } .log .result { color: var(--ok); }
 .views { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
 .views button { background: none; border: 0; border-radius: 7px; padding: 6px 12px; color: var(--muted); font-weight: 500; }
@@ -324,22 +329,27 @@ details[open] summary { margin-bottom: 12px; }
           <button class="btn btn-danger" id="cancelBtn" type="button" hidden>Batalkan</button>
         </div>
         <div class="stack">
-          <details class="panel" id="logBox"><summary>Progres</summary><ul class="log" id="log" aria-live="polite"></ul></details>
+          <details class="panel" id="logBox"><summary>Riwayat session</summary><ul class="log" id="log" aria-live="polite"></ul></details>
           <div class="panel" id="resultBox" hidden>
             <div class="views" role="tablist" id="viewTabs"></div>
             <div class="view" id="view"></div>
           </div>
           <form class="panel stack" id="reviseForm" hidden>
-            <label class="f">Revisi
-              <span class="hint">Contoh: "ganti warna primary jadi hijau", "font heading lebih formal", "tambah section FAQ".</span>
+            <label class="f">Lanjutkan session
+              <span class="hint">Claude mengingat seluruh percakapan proyek ini. Minta perubahan ("ganti primary jadi biru", "tambah section FAQ") atau tanyakan alasan sebuah keputusan desain.</span>
               <textarea name="instruction" style="min-height:80px"></textarea>
             </label>
             <div class="row">
-              <button class="btn btn-primary" type="submit">Terapkan revisi</button>
+              <button class="btn btn-primary" type="submit">Kirim</button>
               <p class="error" id="reviseError" role="alert"></p>
             </div>
           </form>
           <div class="panel" id="filesBox" hidden><h2>File</h2><div class="files" id="files"></div></div>
+          <div class="panel" id="sessionBox" hidden>
+            <h2>Session Claude Code</h2>
+            <p class="hint" style="margin:0 0 10px">Proyek ini adalah satu session Claude Code. Buka di terminal untuk melanjutkan percakapan yang sama secara interaktif. Hindari mengirim pesan dari UI selama session itu masih terbuka di terminal.</p>
+            <div class="cmd"><code id="sessionCmd"></code><button class="btn" type="button" id="copyCmd">Salin</button></div>
+          </div>
         </div>
       </section>
     </main>
@@ -576,7 +586,9 @@ form.onsubmit = async (e) => {
 function logLine(entry) {
   const li = document.createElement('li');
   li.className = entry.kind;
-  li.innerHTML = entry.kind === 'tool' ? `<b>${esc(entry.tool)}</b> ${esc(entry.text)}` : esc(entry.text);
+  li.innerHTML = entry.kind === 'tool' ? `<b>${esc(entry.tool)}</b> ${esc(entry.text)}`
+    : entry.kind === 'run' ? `<span>${esc(entry.text)}</span><time>${esc(fmtDate(entry.at))}</time>`
+    : esc(entry.text);
   const log = $('#log');
   log.append(li);
   log.scrollTop = log.scrollHeight;
@@ -636,10 +648,23 @@ async function renderJob(id) {
     bar.append(b);
     if (i === 0) b.click();
   });
+  $('#sessionBox').hidden = !job.sessionCommand;
+  $('#sessionCmd').textContent = job.sessionCommand ?? '';
   const files = job.files.filter((f) => !f.startsWith('input/'));
   $('#filesBox').hidden = !files.length;
   $('#files').innerHTML = files.map((f) => `<a href="${url(f)}" download="${esc(f.split('/').pop())}">${esc(f)}</a>`).join('');
 }
+
+$('#copyCmd').onclick = async () => {
+  const btn = $('#copyCmd');
+  try {
+    await navigator.clipboard.writeText($('#sessionCmd').textContent);
+    btn.textContent = 'Tersalin';
+  } catch {
+    btn.textContent = 'Gagal';
+  }
+  setTimeout(() => (btn.textContent = 'Salin'), 1500);
+};
 
 $('#cancelBtn').onclick = () => api(`/api/jobs/${active}/cancel`, { method: 'POST' })
   .catch((e) => logLine({ kind: 'error', text: e.message }));
