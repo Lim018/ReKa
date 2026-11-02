@@ -30,8 +30,12 @@ const colors = tokens.colors ?? {};
 for (const key of REQUIRED_COLORS) {
   if (!(key in colors)) errors.push(`colors.${key} is missing`);
 }
+// Extra colors may be translucent (#rrggbbaa, e.g. glass surfaces); the required ones stay opaque so
+// their contrast can be measured exactly.
+const HEX_ALPHA = /^#[0-9a-fA-F]{8}$/;
 for (const [key, value] of Object.entries(colors)) {
-  if (typeof value !== 'string' || !HEX.test(value)) errors.push(`colors.${key} must be #rrggbb, got ${JSON.stringify(value)}`);
+  const ok = typeof value === 'string' && (HEX.test(value) || (!REQUIRED_COLORS.includes(key) && HEX_ALPHA.test(value)));
+  if (!ok) errors.push(`colors.${key} must be #rrggbb${REQUIRED_COLORS.includes(key) ? '' : ' or #rrggbbaa'}, got ${JSON.stringify(value)}`);
 }
 
 const pairs = [...DEFAULT_PAIRS, ...(tokens.contrastPairs ?? [])];
