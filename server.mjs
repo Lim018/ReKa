@@ -21,7 +21,7 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const CAVEMAN_RECEIPTS = join(homedir(), '.caveman', 'receipts');
 const UPLOAD_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.html', '.htm']);
 const MAX_BODY = 20 * 1024 * 1024;
-const JOB_TIMEOUT_MS = 20 * 60 * 1000;
+const JOB_TIMEOUT_MS = 30 * 60 * 1000;
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.md': 'text/markdown; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -44,7 +44,7 @@ const readMeta = (id) => {
 const writeMeta = (id, meta) => writeFileSync(metaPath(id), JSON.stringify(meta, null, 2));
 // Every progress line of every run in a project, so the history survives server restarts.
 const logPath = (id) => join(OUTPUT, id, 'log.jsonl');
-const INTERNAL_FILES = new Set(['job.json', 'log.jsonl']);
+const INTERNAL_FILES = new Set(['job.json', 'log.jsonl', 'suggestions.json']);
 
 // A job left "running" by a previous server process can never finish.
 for (const id of readdirSync(OUTPUT)) {
@@ -142,11 +142,21 @@ function listFiles(dir, prefix = '') {
   });
 }
 
+// Follow-up ideas Claude writes for the UI's one-click buttons (skill section 8).
+function readSuggestions(id) {
+  try {
+    const list = JSON.parse(readFileSync(join(OUTPUT, id, 'suggestions.json'), 'utf8'));
+    return Array.isArray(list) ? list.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim().slice(0, 120)).slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+}
+
 function jobSummary(id) {
   const dir = join(OUTPUT, id);
   const meta = readMeta(id) ?? { id, title: id, status: 'done', createdAt: statSync(dir).mtime.toISOString() };
   const sessionCommand = meta.sessionId ? `cd '${ROOT}' && claude --resume ${meta.sessionId}` : null;
-  return { ...meta, sessionCommand, caveman: meta.caveman ?? null, cavemanReceipt: cavemanReceipt(meta.sessionId), files: listFiles(dir).filter((f) => !INTERNAL_FILES.has(f)) };
+  return { ...meta, sessionCommand, suggestions: readSuggestions(id), caveman: meta.caveman ?? null, cavemanReceipt: cavemanReceipt(meta.sessionId), files: listFiles(dir).filter((f) => !INTERNAL_FILES.has(f)) };
 }
 
 function readBody(req) {
@@ -206,7 +216,7 @@ function pushLog(id, entry) {
 function runClaude(id, prompt, { label, sessionId, resume, sessionName, model = null, effort = null, caveman = false, extractTarget = null, extraDir = null }) {
   const allowed = [
     'Read', 'Glob', 'Grep', 'Skill', 'Write(./output/**)', 'Edit(./output/**)',
-    'Bash(node scripts/validate.mjs:*)', 'Bash(node scripts/render.mjs:*)',
+    'Bash(node scripts/validate.mjs:*)', 'Bash(node scripts/lint.mjs:*)', 'Bash(node scripts/render.mjs:*)',
   ];
   if (extractTarget) allowed.push(`Bash(node scripts/extract.mjs ${extractTarget}:*)`);
   const cavemanMcp = caveman ? cavemanMcpConfig() : null;
@@ -404,6 +414,7 @@ async function createJob(req, res) {
     `Output yang diminta: ${outputs.join(', ')}.`,
     `Simpan semua hasil di folder output/${id}/ (folder sudah ada, jangan buat folder output lain).`,
     extractTarget && `Untuk ekstraksi jalankan persis: node scripts/extract.mjs ${extractTarget} output/${id}/source`,
+    `Jalankan semua tahap skill, termasuk arah kreatif (bagian 3), kritik diri dengan rubrik (bagian 7), dan suggestions.json (bagian 8).`,
     `Jangan bertanya ke user; ambil asumsi dan catat di design.md.`,
   ];
   const title = brief.length > 80 ? brief.slice(0, 80).replace(/\s+\S*$/, '') + '…' : brief || label;
@@ -442,14 +453,15 @@ async function reviseJob(req, res, id) {
         `Pesan dari user: ${text}`,
         ``,
         `Jika ini permintaan perubahan, terapkan pada output/${id}/ dengan alur penyesuaian skill design-generator`,
-        `(tokens.json → validate → design.md → index.html → render ulang PNG), output: ${outputs}.`,
+        `(tokens.json → validate → design.md → index.html → lint → render ulang → lihat PNG → perbarui suggestions.json), output: ${outputs}.`,
+        `"Coba arah B/C" berarti membangun ulang dengan arah itu dari bagian Arah kreatif di design.md.`,
         `Jika ini pertanyaan, jawab saja tanpa mengubah file. Jangan bertanya balik ke user.`,
       ].join('\n')
     : [
         `/design-generator`,
         `Revisi desain yang sudah ada di folder output/${id}/ (baca tokens.json, design.md, dan index.html di sana terlebih dahulu).`,
         `Permintaan revisi: ${text}`,
-        `Ikuti alur penyesuaian di bagian 7 supaya semua output tetap sinkron. Output yang diminta: ${outputs}.`,
+        `Ikuti alur penyesuaian di bagian 9 supaya semua output tetap sinkron, termasuk lint dan suggestions.json. Output yang diminta: ${outputs}.`,
         `Jangan bertanya ke user.`,
       ].join('\n');
   runClaude(id, prompt, {

@@ -56,6 +56,7 @@ Hasil disimpan di `output/<slug>/`: `tokens.json`, `design.md`, `index.html`, `p
 | `.claude/skills/design-generator/SKILL.md` | Alur kerja dan aturan output (ubah file ini untuk mengatur perilaku generator) |
 | `scripts/extract.mjs <url\|file> <dir>` | Ambil warna, font, spacing, struktur, dan screenshot dari sistem lama |
 | `scripts/validate.mjs <tokens.json>` | Cek token: warna wajib, format hex, kontras WCAG, skala font/spacing |
-| `scripts/render.mjs <html> <png> [--width N]` | Render HTML ke PNG (full page) |
+| `scripts/lint.mjs <html>` | Cek halaman: warna di luar token, gambar/CDN eksternal, versi library, alt/lang, `prefers-reduced-motion`, kata klise |
+| `scripts/render.mjs <html> <png> [--width N] [--wait ms]` | Render HTML ke PNG (full page). Men-scroll agar reveal terpicu, menunggu animasi/3D, dan melaporkan error JS |
 
 Untuk dijadikan produk/web app nanti, script ini tetap dipakai, dan Claude Code diganti dengan panggilan Claude API.
