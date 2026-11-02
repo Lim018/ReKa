@@ -1,0 +1,379 @@
+// Local UI for the design generator. Runs Claude Code headless (`claude -p`) with the user's own
+// Claude login, so it is for personal use on this machine only: it binds to 127.0.0.1 and rejects
+// requests from other hosts/origins.
+import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, createReadStream } from 'node:fs';
+import { join, resolve, extname, basename, dirname, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = dirname(fileURLToPath(import.meta.url));
+const OUTPUT = join(ROOT, 'output');
+const PORT = Number(process.env.PORT) || 4000;
+const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
+const OUTPUTS = ['png', 'html', 'design.md'];
+const UPLOAD_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.html', '.htm']);
+const MAX_BODY = 20 * 1024 * 1024;
+const JOB_TIMEOUT_MS = 20 * 60 * 1000;
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp', '.svg': 'image/svg+xml', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+};
+
+mkdirSync(OUTPUT, { recursive: true });
+
+// In-memory state for jobs started by this server process; job.json in each folder is the durable record.
+const live = new Map(); // id -> { proc, log: [], listeners: Set<res> }
+
+const metaPath = (id) => join(OUTPUT, id, 'job.json');
+const readMeta = (id) => {
+  try {
+    return JSON.parse(readFileSync(metaPath(id), 'utf8'));
+  } catch {
+    return null;
+  }
+};
+const writeMeta = (id, meta) => writeFileSync(metaPath(id), JSON.stringify(meta, null, 2));
+
+// A job left "running" by a previous server process can never finish.
+for (const id of readdirSync(OUTPUT)) {
+  const meta = readMeta(id);
+  if (meta?.status === 'running') writeMeta(id, { ...meta, status: 'interrupted' });
+}
+
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function slugify(text) {
+  return text.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'desain';
+}
+
+function newJobId(label) {
+  const d = new Date();
+  const stamp = [d.getFullYear(), d.getMonth() + 1, d.getDate(), '-', d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map((n) => (typeof n === 'number' ? String(n).padStart(2, '0') : n)).join('');
+  return `${stamp}-${slugify(label)}`;
+}
+
+// Resolve a path inside a base folder, refusing anything that escapes it.
+function inside(base, rel) {
+  const full = resolve(base, rel);
+  if (full !== base && !full.startsWith(base + sep)) throw new HttpError(403, 'Path di luar folder output');
+  return full;
+}
+
+function listFiles(dir, prefix = '') {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (e.name.startsWith('.')) return [];
+    const rel = prefix + e.name;
+    return e.isDirectory() ? listFiles(join(dir, e.name), rel + '/') : [rel];
+  });
+}
+
+function jobSummary(id) {
+  const dir = join(OUTPUT, id);
+  const meta = readMeta(id) ?? { id, title: id, status: 'done', createdAt: statSync(dir).mtime.toISOString() };
+  return { ...meta, files: listFiles(dir).filter((f) => f !== 'job.json') };
+}
+
+function readBody(req) {
+  return new Promise((ok, fail) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > MAX_BODY) {
+        fail(new HttpError(413, 'Ukuran request maksimal 20MB'));
+        req.destroy();
+      } else chunks.push(c);
+    });
+    req.on('end', () => {
+      try {
+        ok(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+      } catch {
+        fail(new HttpError(400, 'Body harus JSON'));
+      }
+    });
+    req.on('error', fail);
+  });
+}
+
+function sendJson(res, status, data) {
+  res.writeHead(status, { 'Content-Type': MIME['.json'] });
+  res.end(JSON.stringify(data));
+}
+
+// ---- Claude Code runner ----------------------------------------------------------------------
+
+function describeTool(name, input = {}) {
+  const rel = (p) => (p ? String(p).replace(ROOT + sep, '') : '');
+  switch (name) {
+    case 'Bash': return input.command;
+    case 'Read': case 'Write': case 'Edit': return rel(input.file_path);
+    case 'Glob': case 'Grep': return input.pattern;
+    case 'Skill': return input.skill ?? input.name ?? '';
+    default: return '';
+  }
+}
+
+function pushLog(id, entry) {
+  const job = live.get(id);
+  job.log.push(entry);
+  for (const res of job.listeners) res.write(`data: ${JSON.stringify(entry)}\n\n`);
+}
+
+// extractTarget: the only argument `scripts/extract.mjs` may be called with (null = extract not allowed).
+// Keeping Bash to these exact script invocations limits what instructions injected by a redesigned
+// page could make Claude do.
+function runClaude(id, prompt, { extractTarget = null, extraDir = null } = {}) {
+  const allowed = [
+    'Read', 'Glob', 'Grep', 'Skill', 'Write(./output/**)', 'Edit(./output/**)',
+    'Bash(node scripts/validate.mjs:*)', 'Bash(node scripts/render.mjs:*)',
+  ];
+  if (extractTarget) allowed.push(`Bash(node scripts/extract.mjs ${extractTarget}:*)`);
+  const args = [
+    '-p', prompt,
+    '--output-format', 'stream-json', '--verbose',
+    '--strict-mcp-config', '--no-session-persistence',
+    '--permission-mode', 'dontAsk',
+    '--tools', 'Bash,Read,Write,Edit,Glob,Grep,Skill',
+    '--allowedTools', ...allowed,
+  ];
+  if (extraDir) args.push('--add-dir', extraDir);
+
+  const proc = spawn('claude', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  live.set(id, { proc, log: [], listeners: new Set() });
+  pushLog(id, { kind: 'info', text: 'Claude Code dimulai…' });
+
+  let buffer = '';
+  let result = null;
+  proc.stdout.on('data', (chunk) => {
+    buffer += chunk;
+    let nl;
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line) continue;
+      let ev;
+      try {
+        ev = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (ev.type === 'assistant') {
+        for (const block of ev.message?.content ?? []) {
+          if (block.type === 'text' && block.text.trim()) pushLog(id, { kind: 'text', text: block.text.trim() });
+          if (block.type === 'tool_use') pushLog(id, { kind: 'tool', tool: block.name, text: describeTool(block.name, block.input) });
+        }
+      } else if (ev.type === 'user') {
+        for (const block of ev.message?.content ?? []) {
+          if (block.type === 'tool_result' && block.is_error) {
+            const text = Array.isArray(block.content) ? block.content.map((c) => c.text ?? '').join(' ') : String(block.content ?? '');
+            pushLog(id, { kind: 'warn', text: text.slice(0, 400) });
+          }
+        }
+      } else if (ev.type === 'result') {
+        result = ev;
+      }
+    }
+  });
+  let stderr = '';
+  proc.stderr.on('data', (c) => (stderr = (stderr + c).slice(-2000)));
+
+  const timer = setTimeout(() => stopJob(id, 'timeout'), JOB_TIMEOUT_MS);
+  proc.on('error', (err) => pushLog(id, { kind: 'error', text: `Gagal menjalankan claude: ${err.message}` }));
+  proc.on('close', (code, signal) => {
+    clearTimeout(timer);
+    const job = live.get(id);
+    const ok = code === 0 && result && !result.is_error;
+    const status = ok ? 'done' : job.stopReason === 'cancel' ? 'cancelled' : 'failed';
+    const meta = readMeta(id) ?? {};
+    const error = ok ? null
+      : job.stopReason === 'timeout' ? `Dihentikan setelah ${JOB_TIMEOUT_MS / 60000} menit`
+      : (result?.result || stderr.trim() || `claude keluar dengan kode ${code ?? signal}`);
+    writeMeta(id, { ...meta, status, finishedAt: new Date().toISOString(), summary: ok ? result.result : meta.summary, error });
+    if (ok) pushLog(id, { kind: 'result', text: result.result });
+    else pushLog(id, { kind: 'error', text: status === 'cancelled' ? 'Dibatalkan.' : error });
+    for (const res of job.listeners) {
+      res.write(`event: end\ndata: ${JSON.stringify({ status })}\n\n`);
+      res.end();
+    }
+    job.listeners.clear();
+    job.proc = null;
+  });
+}
+
+const isRunning = () => [...live.values()].some((j) => j.proc);
+
+function stopJob(id, reason) {
+  const job = live.get(id);
+  if (!job?.proc) return;
+  job.stopReason = reason;
+  job.proc.kill('SIGTERM');
+}
+
+// ---- Request handlers ------------------------------------------------------------------------
+
+async function createJob(req, res) {
+  if (isRunning()) throw new HttpError(409, 'Masih ada proses generate yang berjalan');
+  const body = await readBody(req);
+  const mode = body.mode === 'redesign' ? 'redesign' : body.mode === 'design' ? 'design' : null;
+  if (!mode) throw new HttpError(400, 'Mode harus design atau redesign');
+  const brief = String(body.brief ?? '').trim().slice(0, 4000);
+  const outputs = OUTPUTS.filter((o) => (body.outputs ?? []).includes(o));
+  if (!outputs.length) throw new HttpError(400, 'Pilih minimal satu output');
+
+  let source = String(body.source ?? '').trim();
+  let sourceKind = null;
+  let extraDir = null;
+  if (source) {
+    if (/^https?:\/\//i.test(source)) {
+      try {
+        source = new URL(source).href;
+      } catch {
+        throw new HttpError(400, 'URL tidak valid');
+      }
+      sourceKind = 'url';
+    } else {
+      source = resolve(source.replace(/^~(?=\/)/, process.env.HOME));
+      if (!existsSync(source)) throw new HttpError(400, `Path tidak ditemukan: ${source}`);
+      sourceKind = statSync(source).isDirectory() ? 'folder' : 'file';
+      extraDir = sourceKind === 'folder' ? source : dirname(source);
+    }
+    if (/\s/.test(source)) throw new HttpError(400, 'URL/path sumber tidak boleh mengandung spasi');
+  }
+  if (mode === 'design' && !brief) throw new HttpError(400, 'Isi brief desain');
+  if (mode === 'redesign' && !source && !body.file) throw new HttpError(400, 'Redesign butuh URL, path lokal, atau file upload');
+  const uploadName = body.file ? basename(String(body.file.name ?? '')).replace(/[^\w.-]+/g, '_') : null;
+  if (uploadName && !UPLOAD_EXT.has(extname(uploadName).toLowerCase())) throw new HttpError(400, 'File harus png, jpg, webp, atau html');
+
+  const label = brief || (sourceKind === 'url' ? new URL(source).hostname : basename(source || uploadName || 'redesign'));
+  const id = newJobId(label);
+  const dir = join(OUTPUT, id);
+  mkdirSync(dir, { recursive: true });
+
+  let uploaded = null;
+  if (uploadName) {
+    const name = uploadName;
+    mkdirSync(join(dir, 'input'), { recursive: true });
+    uploaded = `output/${id}/input/${name}`;
+    writeFileSync(join(ROOT, uploaded), Buffer.from(String(body.file.data ?? ''), 'base64'));
+  }
+
+  // The extract script may only be pointed at the source the user gave (URL, local HTML, or uploaded HTML).
+  const htmlUpload = uploaded && /\.html?$/i.test(uploaded) ? uploaded : null;
+  const extractTarget = mode !== 'redesign' ? null
+    : sourceKind === 'url' || (sourceKind === 'file' && /\.html?$/i.test(source)) ? source
+    : htmlUpload;
+
+  const lines = [
+    `/design-generator`,
+    `Mode: ${mode}.`,
+    sourceKind && `Sumber (${sourceKind}): ${source}`,
+    uploaded && `File upload dari user: ${uploaded}`,
+    brief && `Brief: ${brief}`,
+    `Output yang diminta: ${outputs.join(', ')}.`,
+    `Simpan semua hasil di folder output/${id}/ (folder sudah ada, jangan buat folder output lain).`,
+    extractTarget && `Untuk ekstraksi jalankan persis: node scripts/extract.mjs ${extractTarget} output/${id}/source`,
+    `Jangan bertanya ke user; ambil asumsi dan catat di design.md.`,
+  ];
+  const meta = {
+    id, title: brief.length > 80 ? brief.slice(0, 80).replace(/\s+\S*$/, '') + '…' : brief || label, mode, brief, source: source || null, upload: uploaded, outputs,
+    status: 'running', createdAt: new Date().toISOString(), revisions: [],
+  };
+  writeMeta(id, meta);
+  runClaude(id, lines.filter(Boolean).join('\n'), { extractTarget, extraDir });
+  sendJson(res, 201, { id });
+}
+
+async function reviseJob(req, res, id) {
+  if (isRunning()) throw new HttpError(409, 'Masih ada proses generate yang berjalan');
+  const meta = readMeta(id);
+  if (!meta) throw new HttpError(404, 'Hasil tidak ditemukan');
+  const { instruction } = await readBody(req);
+  const text = String(instruction ?? '').trim().slice(0, 4000);
+  if (!text) throw new HttpError(400, 'Isi permintaan revisi');
+
+  writeMeta(id, { ...meta, status: 'running', revisions: [...(meta.revisions ?? []), { at: new Date().toISOString(), instruction: text }] });
+  const prompt = [
+    `/design-generator`,
+    `Revisi desain yang sudah ada di folder output/${id}/ (baca tokens.json, design.md, dan index.html di sana terlebih dahulu).`,
+    `Permintaan revisi: ${text}`,
+    `Ikuti alur penyesuaian di bagian 7 supaya semua output tetap sinkron. Output yang diminta: ${(meta.outputs ?? OUTPUTS).join(', ')}.`,
+    `Jangan bertanya ke user.`,
+  ].join('\n');
+  runClaude(id, prompt);
+  sendJson(res, 202, { id });
+}
+
+function streamEvents(req, res, id) {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+  const job = live.get(id);
+  for (const entry of job?.log ?? []) res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  if (job?.proc) {
+    job.listeners.add(res);
+    req.on('close', () => job.listeners.delete(res));
+  } else {
+    res.write(`event: end\ndata: ${JSON.stringify({ status: readMeta(id)?.status ?? 'done' })}\n\n`);
+    res.end();
+  }
+}
+
+function serveFile(res, file, headers = {}) {
+  if (!existsSync(file) || !statSync(file).isFile()) throw new HttpError(404, 'File tidak ditemukan');
+  res.writeHead(200, { 'Content-Type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream', ...headers });
+  createReadStream(file).pipe(res);
+}
+
+async function handle(req, res) {
+  // Only this machine's browser may talk to the server (blocks DNS rebinding and cross-site POSTs).
+  if (!ALLOWED_HOSTS.has(req.headers.host)) throw new HttpError(403, 'Host tidak diizinkan');
+  if (req.method !== 'GET' && req.headers.origin !== `http://${req.headers.host}`) throw new HttpError(403, 'Origin tidak diizinkan');
+
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const path = decodeURIComponent(url.pathname);
+  const m = path.match(/^\/api\/jobs\/([\w-]+)(?:\/(events|revise|cancel))?$/);
+
+  if (req.method === 'GET' && path === '/') return serveFile(res, join(ROOT, 'ui', 'index.html'));
+  if (req.method === 'GET' && path === '/api/jobs') {
+    const jobs = readdirSync(OUTPUT, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => jobSummary(e.name))
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    return sendJson(res, 200, { running: isRunning(), jobs });
+  }
+  if (req.method === 'POST' && path === '/api/jobs') return createJob(req, res);
+  if (m && existsSync(join(OUTPUT, m[1]))) {
+    const [, id, action] = m;
+    if (req.method === 'GET' && !action) return sendJson(res, 200, jobSummary(id));
+    if (req.method === 'GET' && action === 'events') return streamEvents(req, res, id);
+    if (req.method === 'POST' && action === 'revise') return reviseJob(req, res, id);
+    if (req.method === 'POST' && action === 'cancel') {
+      stopJob(id, 'cancel');
+      return sendJson(res, 202, { id });
+    }
+  }
+  if (req.method === 'GET' && path.startsWith('/output/')) {
+    // Generated pages run sandboxed (opaque origin), so their scripts cannot call this API.
+    return serveFile(res, inside(OUTPUT, path.slice('/output/'.length)), {
+      'Content-Security-Policy': 'sandbox allow-scripts allow-forms allow-popups',
+      'Cache-Control': 'no-store',
+    });
+  }
+  throw new HttpError(404, 'Tidak ditemukan');
+}
+
+createServer((req, res) => {
+  handle(req, res).catch((err) => {
+    const status = err instanceof HttpError ? err.status : 500;
+    if (status === 500) console.error(err);
+    if (!res.headersSent) sendJson(res, status, { error: err.message });
+    else res.end();
+  });
+}).listen(PORT, '127.0.0.1', () => {
+  console.log(`Design Generator UI: http://localhost:${PORT}`);
+});
