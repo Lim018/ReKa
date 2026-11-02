@@ -156,6 +156,16 @@ textarea { min-height: 120px; resize: vertical; }
 .drop strong { color: var(--text); }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .error { color: var(--danger); font-size: 13px; margin: 0; }
+.pill {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 28px 0 10px;
+  border-radius: 8px; border: 1px solid var(--border); background: var(--chrome); color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.pill:hover { border-color: var(--muted); }
+.pill:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
+.pill select { appearance: none; background: none; border: 0; color: var(--text); font: 600 12px var(--font); cursor: pointer; outline: none; padding: 0; }
+.pill select option { background: var(--panel); color: var(--text); }
+.pill::after { content: ""; position: absolute; right: 11px; top: 12px; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); pointer-events: none; }
+.run-opts { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---- Project view ---- */
 .proj-head { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; }
@@ -211,6 +221,8 @@ details[open] summary { margin-bottom: 12px; }
   <symbol id="i-redo" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3L4 15"/><path d="M4 20v-5h5"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M10 9l5 3-5 3z"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4zM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></symbol>
 </svg>
 
@@ -287,6 +299,10 @@ details[open] summary { margin-bottom: 12px; }
               </div>
             </div>
             <div class="row">
+              <span class="run-opts">
+                <label class="pill" title="Model Claude"><svg class="i"><use href="#i-cpu"/></svg>Model<select name="model" aria-label="Model"></select></label>
+                <label class="pill" title="Seberapa dalam Claude berpikir"><svg class="i"><use href="#i-gauge"/></svg>Effort<select name="effort" aria-label="Effort"></select></label>
+              </span>
               <button class="btn btn-primary" type="submit" id="submitBtn">Generate</button>
               <p class="error" id="formError" role="alert"></p>
             </div>
@@ -340,6 +356,10 @@ details[open] summary { margin-bottom: 12px; }
               <textarea name="instruction" style="min-height:80px"></textarea>
             </label>
             <div class="row">
+              <span class="run-opts">
+                <label class="pill" title="Model Claude"><svg class="i"><use href="#i-cpu"/></svg>Model<select name="model" aria-label="Model"></select></label>
+                <label class="pill" title="Seberapa dalam Claude berpikir"><svg class="i"><use href="#i-gauge"/></svg>Effort<select name="effort" aria-label="Effort"></select></label>
+              </span>
               <button class="btn btn-primary" type="submit">Kirim</button>
               <p class="error" id="reviseError" role="alert"></p>
             </div>
@@ -367,6 +387,25 @@ const SPECIAL = {
 };
 const isProject = (t) => t !== 'home' && !SPECIAL[t];
 let openSpecial = [];     // SPECIAL keys open as tabs
+// Model/effort pickers shared by both forms. '' = Claude Code's own default.
+const MODELS = [['', 'Default'], ['opus', 'Opus 5.5'], ['sonnet', 'Sonnet 5.5'], ['haiku', 'Haiku 5.5']];
+const EFFORTS = [['', 'Default'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
+const MODEL_NAMES = Object.fromEntries(MODELS);
+let runOpts = { model: '', effort: '' };
+try { runOpts = { ...runOpts, ...JSON.parse(localStorage.getItem('reka.runopts') || '{}') }; } catch {}
+function setupRunOptions(formEl) {
+  for (const [name, list] of [['model', MODELS], ['effort', EFFORTS]]) {
+    const sel = formEl.querySelector(`select[name=${name}]`);
+    sel.innerHTML = list.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+    sel.value = list.some(([v]) => v === runOpts[name]) ? runOpts[name] : '';
+    sel.onchange = () => {
+      runOpts[name] = sel.value;
+      try { localStorage.setItem('reka.runopts', JSON.stringify(runOpts)); } catch {}
+      document.querySelectorAll(`select[name=${name}]`).forEach((s) => (s.value = sel.value));
+    };
+  }
+}
+const readRunOptions = (formEl) => ({ model: formEl.model.value, effort: formEl.effort.value });
 const DROP_TEXT = 'Tarik file ke sini atau <strong>klik untuk memilih</strong> (png, jpg, webp, html, maks 15MB)';
 
 let jobs = [];
@@ -564,13 +603,14 @@ form.onsubmit = async (e) => {
   $('#submitBtn').disabled = true;
   try {
     const mode = form.mode.value;
-    const body = { mode, brief: form.brief.value, outputs: [...form.querySelectorAll('[name=outputs]:checked')].map((c) => c.value) };
+    const body = { mode, brief: form.brief.value, outputs: [...form.querySelectorAll('[name=outputs]:checked')].map((c) => c.value), ...readRunOptions(form) };
     if (mode === 'redesign') {
       body.source = form.source.value;
       if (pickedFile) body.file = { name: pickedFile.name, data: await toBase64(pickedFile) };
     }
     const { id } = await api('/api/jobs', { method: 'POST', body: JSON.stringify(body) });
     form.reset();
+    setupRunOptions(form);
     pickedFile = null;
     $('#dropText').innerHTML = DROP_TEXT;
     form.dispatchEvent(new Event('change'));
@@ -614,7 +654,8 @@ async function renderJob(id) {
   const isRunning = job.status === 'running';
   $('#jobGlyph').outerHTML = glyph(job, 'lg').replace('class="glyph lg"', 'class="glyph lg" id="jobGlyph"');
   $('#jobTitle').textContent = job.title || job.id;
-  $('#jobMeta').textContent = [job.mode, fmtDate(job.createdAt), job.source, job.outputs?.join(', ')].filter(Boolean).join(' · ');
+  $('#jobMeta').textContent = [job.mode, fmtDate(job.createdAt), job.source, job.outputs?.join(', '),
+    job.model && MODEL_NAMES[job.model], job.effort && `effort ${job.effort}`].filter(Boolean).join(' · ');
   $('#jobStatus').className = `badge s-${job.status}`;
   $('#jobStatus').textContent = STATUS[job.status] ?? job.status;
   $('#cancelBtn').hidden = !isRunning;
@@ -674,8 +715,8 @@ $('#reviseForm').onsubmit = async (e) => {
   $('#reviseError').textContent = '';
   const id = active;
   try {
-    await api(`/api/jobs/${id}/revise`, { method: 'POST', body: JSON.stringify({ instruction: e.target.instruction.value }) });
-    e.target.reset();
+    await api(`/api/jobs/${id}/revise`, { method: 'POST', body: JSON.stringify({ instruction: e.target.instruction.value, ...readRunOptions(e.target) }) });
+    e.target.instruction.value = '';
     await refresh();
     show(id);
   } catch (err) {
@@ -750,6 +791,15 @@ $('#usageBtn').onclick = async () => {
 
 // Keep tab status dots and the project grid current while something is running.
 setInterval(() => { if (running) refresh(); }, 5000);
+
+setupRunOptions(form);
+setupRunOptions($('#reviseForm'));
+
+// Address-bar edits like #<project-id> or #settings switch tabs without a reload.
+window.addEventListener('hashchange', () => {
+  const id = location.hash.slice(1) || 'home';
+  if (id !== active && (id === 'home' || SPECIAL[id] || jobById(id))) show(id);
+});
 
 api('/api/account').then(({ account }) => renderAccountChip(account)).catch(() => {});
 

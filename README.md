@@ -30,6 +30,8 @@ Karena itu:
   terminal dengan perintah yang tampil di halaman proyek (`claude --resume <id>`). Session ini juga
   muncul di daftar `/resume` Claude Code untuk folder ini.
 - Riwayat setiap run tersimpan di `output/<proyek>/log.jsonl`.
+- Model (Opus/Sonnet/Haiku) dan effort (low–max) bisa dipilih per generate dan per pesan lanjutan.
+  "Default" memakai setelan Claude Code Anda. Mengganti model di tengah session tetap mempertahankan konteks.
 - Satu proses berjalan pada satu waktu, dengan batas 20 menit per proses.
 - Port bisa diganti: `PORT=5000 npm start`.
 

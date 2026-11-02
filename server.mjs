@@ -14,6 +14,9 @@ const USAGE_FILE = join(OUTPUT, '.usage.json');
 const PORT = Number(process.env.PORT) || 4000;
 const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
 const OUTPUTS = ['png', 'html', 'design.md'];
+// Model aliases available on the subscription ('' = Claude Code's own default). Fable needs usage credits.
+const MODELS = { opus: 'Opus 5.5', sonnet: 'Sonnet 5.5', haiku: 'Haiku 5.5' };
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const UPLOAD_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.html', '.htm']);
 const MAX_BODY = 20 * 1024 * 1024;
 const JOB_TIMEOUT_MS = 20 * 60 * 1000;
@@ -58,6 +61,17 @@ function readUsage() {
     return null;
   }
 }
+
+// Optional model/effort chosen in the UI; empty means Claude Code's default.
+function pickRunOptions(body) {
+  const model = String(body.model ?? '');
+  const effort = String(body.effort ?? '');
+  if (model && !MODELS[model]) throw new HttpError(400, 'Model tidak dikenal');
+  if (effort && !EFFORTS.includes(effort)) throw new HttpError(400, 'Effort tidak dikenal');
+  return { model: model || null, effort: effort || null };
+}
+const runLabel = (text, { model, effort }) =>
+  [text, model ? MODELS[model] : null, effort ? `effort ${effort}` : null].filter(Boolean).join(' · ');
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -152,7 +166,7 @@ function pushLog(id, entry) {
 // extractTarget: the only argument `scripts/extract.mjs` may be called with (null = extract not allowed).
 // Keeping Bash to these exact script invocations limits what instructions injected by a redesigned
 // page could make Claude do.
-function runClaude(id, prompt, { label, sessionId, resume, sessionName, extractTarget = null, extraDir = null }) {
+function runClaude(id, prompt, { label, sessionId, resume, sessionName, model = null, effort = null, extractTarget = null, extraDir = null }) {
   const allowed = [
     'Read', 'Glob', 'Grep', 'Skill', 'Write(./output/**)', 'Edit(./output/**)',
     'Bash(node scripts/validate.mjs:*)', 'Bash(node scripts/render.mjs:*)',
@@ -168,6 +182,8 @@ function runClaude(id, prompt, { label, sessionId, resume, sessionName, extractT
     '--allowedTools', ...allowed,
   ];
   if (extraDir) args.push('--add-dir', extraDir);
+  if (model) args.push('--model', model);
+  if (effort) args.push('--effort', effort);
 
   const proc = spawn('claude', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   live.set(id, { proc, listeners: new Set() });
@@ -290,6 +306,7 @@ async function createJob(req, res) {
   const brief = String(body.brief ?? '').trim().slice(0, 4000);
   const outputs = OUTPUTS.filter((o) => (body.outputs ?? []).includes(o));
   if (!outputs.length) throw new HttpError(400, 'Pilih minimal satu output');
+  const runOptions = pickRunOptions(body);
 
   let source = String(body.source ?? '').trim();
   let sourceKind = null;
@@ -348,12 +365,13 @@ async function createJob(req, res) {
   const title = brief.length > 80 ? brief.slice(0, 80).replace(/\s+\S*$/, '') + '…' : brief || label;
   const meta = {
     id, title, mode, brief, source: source || null, upload: uploaded, outputs,
-    sessionId: randomUUID(), extractTarget, extraDir,
+    sessionId: randomUUID(), extractTarget, extraDir, ...runOptions,
     status: 'running', createdAt: new Date().toISOString(), revisions: [],
   };
   writeMeta(id, meta);
   runClaude(id, lines.filter(Boolean).join('\n'), {
-    label: 'Generate awal', sessionId: meta.sessionId, resume: false, sessionName: `ReKa: ${title}`, extractTarget, extraDir,
+    label: runLabel('Generate awal', runOptions), sessionId: meta.sessionId, resume: false, sessionName: `ReKa: ${title}`,
+    ...runOptions, extractTarget, extraDir,
   });
   sendJson(res, 201, { id });
 }
@@ -362,16 +380,17 @@ async function reviseJob(req, res, id) {
   if (isRunning()) throw new HttpError(409, 'Masih ada proses generate yang berjalan');
   const meta = readMeta(id);
   if (!meta) throw new HttpError(404, 'Hasil tidak ditemukan');
-  const { instruction } = await readBody(req);
-  const text = String(instruction ?? '').trim().slice(0, 4000);
+  const body = await readBody(req);
+  const text = String(body.instruction ?? '').trim().slice(0, 4000);
   if (!text) throw new HttpError(400, 'Isi pesan terlebih dahulu');
+  const runOptions = pickRunOptions(body);
 
   // Projects made before sessions existed get a fresh session that starts from the files on disk.
   const resume = Boolean(meta.sessionId);
   const sessionId = meta.sessionId ?? randomUUID();
   writeMeta(id, {
     ...meta, sessionId, status: 'running',
-    revisions: [...(meta.revisions ?? []), { at: new Date().toISOString(), instruction: text }],
+    revisions: [...(meta.revisions ?? []), { at: new Date().toISOString(), instruction: text, ...runOptions }],
   });
   const outputs = (meta.outputs ?? OUTPUTS).join(', ');
   const prompt = resume
@@ -390,7 +409,7 @@ async function reviseJob(req, res, id) {
         `Jangan bertanya ke user.`,
       ].join('\n');
   runClaude(id, prompt, {
-    label: `Pesan: ${text}`, sessionId, resume, sessionName: `ReKa: ${meta.title ?? id}`,
+    label: runLabel(`Pesan: ${text}`, runOptions), sessionId, resume, sessionName: `ReKa: ${meta.title ?? id}`, ...runOptions,
     extractTarget: meta.extractTarget ?? null, extraDir: meta.extraDir ?? null,
   });
   sendJson(res, 202, { id });
