@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rea
 import { join, resolve, extname, basename, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { homedir } from 'node:os';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = join(ROOT, 'output');
@@ -17,6 +18,7 @@ const OUTPUTS = ['png', 'html', 'design.md'];
 // Model aliases available on the subscription ('' = Claude Code's own default). Fable needs usage credits.
 const MODELS = { opus: 'Opus 5.5', sonnet: 'Sonnet 5.5', haiku: 'Haiku 5.5' };
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CAVEMAN_RECEIPTS = join(homedir(), '.caveman', 'receipts');
 const UPLOAD_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.html', '.htm']);
 const MAX_BODY = 20 * 1024 * 1024;
 const JOB_TIMEOUT_MS = 20 * 60 * 1000;
@@ -62,16 +64,49 @@ function readUsage() {
   }
 }
 
-// Optional model/effort chosen in the UI; empty means Claude Code's default.
+// Caveman (token-compression layer) is installed per user: hooks in ~/.claude/settings.json and an
+// MCP server in ~/.claude.json. Its MCP config is read from there rather than stored in this repo.
+function cavemanMcpConfig() {
+  try {
+    return JSON.parse(readFileSync(join(homedir(), '.claude.json'), 'utf8')).mcpServers?.caveman ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Caveman's own per-session receipt (events it handled, compression it measured), if it wrote one.
+function cavemanReceipt(sessionId) {
+  if (!sessionId || !existsSync(CAVEMAN_RECEIPTS)) return null;
+  for (const name of readdirSync(CAVEMAN_RECEIPTS)) {
+    if (!name.startsWith('session-')) continue;
+    try {
+      const r = JSON.parse(readFileSync(join(CAVEMAN_RECEIPTS, name), 'utf8'));
+      if (r.host_session_id !== sessionId) continue;
+      const usage = r.provider_usage ?? {};
+      return {
+        generatedAt: r.generated_at,
+        events: r.execution?.native_events?.value ?? 0,
+        mode: r.policy?.mode ?? null,
+        requests: usage.requests ?? 0,
+        tokensBefore: usage.compression_tokens_before ?? 0,
+        tokensAfter: usage.compression_tokens_after ?? 0,
+        claim: r.claim_status?.compression_reduction ?? null,
+      };
+    } catch {}
+  }
+  return null;
+}
+
+// Optional model/effort/caveman chosen in the UI; empty model/effort means Claude Code's default.
 function pickRunOptions(body) {
   const model = String(body.model ?? '');
   const effort = String(body.effort ?? '');
   if (model && !MODELS[model]) throw new HttpError(400, 'Model tidak dikenal');
   if (effort && !EFFORTS.includes(effort)) throw new HttpError(400, 'Effort tidak dikenal');
-  return { model: model || null, effort: effort || null };
+  return { model: model || null, effort: effort || null, caveman: body.caveman === true && Boolean(cavemanMcpConfig()) };
 }
-const runLabel = (text, { model, effort }) =>
-  [text, model ? MODELS[model] : null, effort ? `effort ${effort}` : null].filter(Boolean).join(' · ');
+const runLabel = (text, { model, effort, caveman }) =>
+  [text, model ? MODELS[model] : null, effort ? `effort ${effort}` : null, caveman ? 'caveman' : 'tanpa caveman'].filter(Boolean).join(' · ');
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -111,7 +146,7 @@ function jobSummary(id) {
   const dir = join(OUTPUT, id);
   const meta = readMeta(id) ?? { id, title: id, status: 'done', createdAt: statSync(dir).mtime.toISOString() };
   const sessionCommand = meta.sessionId ? `cd '${ROOT}' && claude --resume ${meta.sessionId}` : null;
-  return { ...meta, sessionCommand, files: listFiles(dir).filter((f) => !INTERNAL_FILES.has(f)) };
+  return { ...meta, sessionCommand, caveman: meta.caveman ?? null, cavemanReceipt: cavemanReceipt(meta.sessionId), files: listFiles(dir).filter((f) => !INTERNAL_FILES.has(f)) };
 }
 
 function readBody(req) {
@@ -166,12 +201,16 @@ function pushLog(id, entry) {
 // extractTarget: the only argument `scripts/extract.mjs` may be called with (null = extract not allowed).
 // Keeping Bash to these exact script invocations limits what instructions injected by a redesigned
 // page could make Claude do.
-function runClaude(id, prompt, { label, sessionId, resume, sessionName, model = null, effort = null, extractTarget = null, extraDir = null }) {
+// caveman: on = its hooks plus its MCP server (the only MCP loaded); off = all hooks disabled for this
+// run (the caveman hooks live with the user's other hooks, which cannot be removed one by one).
+function runClaude(id, prompt, { label, sessionId, resume, sessionName, model = null, effort = null, caveman = false, extractTarget = null, extraDir = null }) {
   const allowed = [
     'Read', 'Glob', 'Grep', 'Skill', 'Write(./output/**)', 'Edit(./output/**)',
     'Bash(node scripts/validate.mjs:*)', 'Bash(node scripts/render.mjs:*)',
   ];
   if (extractTarget) allowed.push(`Bash(node scripts/extract.mjs ${extractTarget}:*)`);
+  const cavemanMcp = caveman ? cavemanMcpConfig() : null;
+  if (cavemanMcp) allowed.push('mcp__caveman');
   const args = [
     '-p', prompt,
     '--output-format', 'stream-json', '--verbose',
@@ -182,6 +221,11 @@ function runClaude(id, prompt, { label, sessionId, resume, sessionName, model = 
     '--allowedTools', ...allowed,
   ];
   if (extraDir) args.push('--add-dir', extraDir);
+  if (cavemanMcp) {
+    args.push('--mcp-config', JSON.stringify({ mcpServers: { caveman: cavemanMcp } }));
+  } else {
+    args.push('--settings', JSON.stringify({ disableAllHooks: true }));
+  }
   if (model) args.push('--model', model);
   if (effort) args.push('--effort', effort);
 
@@ -451,7 +495,9 @@ async function handle(req, res) {
     return sendJson(res, 200, { running: isRunning(), jobs });
   }
   if (req.method === 'POST' && path === '/api/jobs') return createJob(req, res);
-  if (req.method === 'GET' && path === '/api/account') return sendJson(res, 200, { account: await accountInfo(), usage: readUsage() });
+  if (req.method === 'GET' && path === '/api/account') {
+    return sendJson(res, 200, { account: await accountInfo(), usage: readUsage(), cavemanInstalled: Boolean(cavemanMcpConfig()) });
+  }
   if (req.method === 'POST' && path === '/api/usage') return sendJson(res, 200, { usage: await checkUsage() });
   if (m && existsSync(join(OUTPUT, m[1]))) {
     const [, id, action] = m;

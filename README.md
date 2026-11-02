@@ -32,6 +32,10 @@ Karena itu:
 - Riwayat setiap run tersimpan di `output/<proyek>/log.jsonl`.
 - Model (Opus/Sonnet/Haiku) dan effort (low–max) bisa dipilih per generate dan per pesan lanjutan.
   "Default" memakai setelan Claude Code Anda. Mengganti model di tengah session tetap mempertahankan konteks.
+- Toggle **Caveman** (jika caveman terpasang di Claude Code Anda). On: hook caveman aktif dan MCP caveman dimuat
+  (MCP lain tetap diblokir). Off: semua hook dimatikan untuk run itu, termasuk hook user lain, karena hook caveman
+  tidak bisa dimatikan satu per satu. Halaman proyek menampilkan receipt caveman untuk session tersebut
+  (jumlah event dan kompresi).
 - Satu proses berjalan pada satu waktu, dengan batas 20 menit per proses.
 - Port bisa diganti: `PORT=5000 npm start`.
 

@@ -166,6 +166,16 @@ textarea { min-height: 120px; resize: vertical; }
 .pill select option { background: var(--panel); color: var(--text); }
 .pill::after { content: ""; position: absolute; right: 11px; top: 12px; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); pointer-events: none; }
 .run-opts { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.pill.toggle { padding-right: 10px; }
+.pill.toggle::after { display: none; }
+.pill.toggle input { appearance: none; width: 28px; height: 16px; border-radius: 999px; background: var(--panel-active); position: relative; cursor: pointer; margin: 0; transition: background .15s; }
+.pill.toggle input::before { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+.pill.toggle input:checked { background: var(--primary); }
+.pill.toggle input:checked::before { transform: translateX(12px); background: #fff; }
+.pill.toggle input:disabled { opacity: .4; cursor: not-allowed; }
+.pill.toggle .state { color: var(--text); font-weight: 600; min-width: 26px; }
+.receipt { margin: 12px 0 0; font-size: 12px; color: var(--muted); }
+.receipt b { color: var(--text); font-weight: 600; }
 
 /* ---- Project view ---- */
 .proj-head { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; }
@@ -223,6 +233,7 @@ details[open] summary { margin-bottom: 12px; }
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
   <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4zM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
   <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/></symbol>
+  <symbol id="i-rock" viewBox="0 0 24 24"><path d="M4 17l2-7 5-4 6 2 3 6-2 4H6z"/><path d="M11 6l1 5 5-3M6 10l6 1-2 7"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></symbol>
 </svg>
 
@@ -302,6 +313,7 @@ details[open] summary { margin-bottom: 12px; }
               <span class="run-opts">
                 <label class="pill" title="Model Claude"><svg class="i"><use href="#i-cpu"/></svg>Model<select name="model" aria-label="Model"></select></label>
                 <label class="pill" title="Seberapa dalam Claude berpikir"><svg class="i"><use href="#i-gauge"/></svg>Effort<select name="effort" aria-label="Effort"></select></label>
+                <label class="pill toggle" title="Caveman: lapisan kompresi token (hook + MCP caveman)"><svg class="i"><use href="#i-rock"/></svg>Caveman<input type="checkbox" name="caveman" role="switch" aria-label="Pakai caveman"><span class="state">On</span></label>
               </span>
               <button class="btn btn-primary" type="submit" id="submitBtn">Generate</button>
               <p class="error" id="formError" role="alert"></p>
@@ -359,6 +371,7 @@ details[open] summary { margin-bottom: 12px; }
               <span class="run-opts">
                 <label class="pill" title="Model Claude"><svg class="i"><use href="#i-cpu"/></svg>Model<select name="model" aria-label="Model"></select></label>
                 <label class="pill" title="Seberapa dalam Claude berpikir"><svg class="i"><use href="#i-gauge"/></svg>Effort<select name="effort" aria-label="Effort"></select></label>
+                <label class="pill toggle" title="Caveman: lapisan kompresi token (hook + MCP caveman)"><svg class="i"><use href="#i-rock"/></svg>Caveman<input type="checkbox" name="caveman" role="switch" aria-label="Pakai caveman"><span class="state">On</span></label>
               </span>
               <button class="btn btn-primary" type="submit">Kirim</button>
               <p class="error" id="reviseError" role="alert"></p>
@@ -369,6 +382,7 @@ details[open] summary { margin-bottom: 12px; }
             <h2>Session Claude Code</h2>
             <p class="hint" style="margin:0 0 10px">Proyek ini adalah satu session Claude Code. Buka di terminal untuk melanjutkan percakapan yang sama secara interaktif. Hindari mengirim pesan dari UI selama session itu masih terbuka di terminal.</p>
             <div class="cmd"><code id="sessionCmd"></code><button class="btn" type="button" id="copyCmd">Salin</button></div>
+            <p class="receipt" id="cavemanReceipt"></p>
           </div>
         </div>
       </section>
@@ -391,7 +405,8 @@ let openSpecial = [];     // SPECIAL keys open as tabs
 const MODELS = [['', 'Default'], ['opus', 'Opus 5.5'], ['sonnet', 'Sonnet 5.5'], ['haiku', 'Haiku 5.5']];
 const EFFORTS = [['', 'Default'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
 const MODEL_NAMES = Object.fromEntries(MODELS);
-let runOpts = { model: '', effort: '' };
+let runOpts = { model: '', effort: '', caveman: true };
+let cavemanInstalled = true;
 try { runOpts = { ...runOpts, ...JSON.parse(localStorage.getItem('reka.runopts') || '{}') }; } catch {}
 function setupRunOptions(formEl) {
   for (const [name, list] of [['model', MODELS], ['effort', EFFORTS]]) {
@@ -404,8 +419,23 @@ function setupRunOptions(formEl) {
       document.querySelectorAll(`select[name=${name}]`).forEach((s) => (s.value = sel.value));
     };
   }
+  const cb = formEl.querySelector('input[name=caveman]');
+  const sync = () => {
+    document.querySelectorAll('input[name=caveman]').forEach((c) => {
+      c.checked = cavemanInstalled && runOpts.caveman;
+      c.disabled = !cavemanInstalled;
+      c.nextElementSibling.textContent = !cavemanInstalled ? 'N/A' : c.checked ? 'On' : 'Off';
+      c.closest('.pill').title = cavemanInstalled ? 'Caveman: lapisan kompresi token (hook + MCP caveman)' : 'Caveman tidak terpasang di Claude Code ini';
+    });
+  };
+  cb.onchange = () => {
+    runOpts.caveman = cb.checked;
+    try { localStorage.setItem('reka.runopts', JSON.stringify(runOpts)); } catch {}
+    sync();
+  };
+  sync();
 }
-const readRunOptions = (formEl) => ({ model: formEl.model.value, effort: formEl.effort.value });
+const readRunOptions = (formEl) => ({ model: formEl.model.value, effort: formEl.effort.value, caveman: formEl.caveman.checked });
 const DROP_TEXT = 'Tarik file ke sini atau <strong>klik untuk memilih</strong> (png, jpg, webp, html, maks 15MB)';
 
 let jobs = [];
@@ -655,7 +685,8 @@ async function renderJob(id) {
   $('#jobGlyph').outerHTML = glyph(job, 'lg').replace('class="glyph lg"', 'class="glyph lg" id="jobGlyph"');
   $('#jobTitle').textContent = job.title || job.id;
   $('#jobMeta').textContent = [job.mode, fmtDate(job.createdAt), job.source, job.outputs?.join(', '),
-    job.model && MODEL_NAMES[job.model], job.effort && `effort ${job.effort}`].filter(Boolean).join(' · ');
+    job.model && MODEL_NAMES[job.model], job.effort && `effort ${job.effort}`,
+    job.caveman === true ? 'caveman' : job.caveman === false ? 'tanpa caveman' : null].filter(Boolean).join(' · ');
   $('#jobStatus').className = `badge s-${job.status}`;
   $('#jobStatus').textContent = STATUS[job.status] ?? job.status;
   $('#cancelBtn').hidden = !isRunning;
@@ -691,6 +722,10 @@ async function renderJob(id) {
   });
   $('#sessionBox').hidden = !job.sessionCommand;
   $('#sessionCmd').textContent = job.sessionCommand ?? '';
+  const r = job.cavemanReceipt;
+  $('#cavemanReceipt').innerHTML = r
+    ? `Caveman: <b>berjalan</b> di session ini · ${r.events} event · mode ${esc(r.mode ?? '-')} · kompresi <b>${r.tokensBefore} → ${r.tokensAfter}</b> token · receipt ${esc(fmtDate(r.generatedAt))}`
+    : 'Caveman: tidak ada receipt untuk session ini (caveman tidak berjalan).';
   const files = job.files.filter((f) => !f.startsWith('input/'));
   $('#filesBox').hidden = !files.length;
   $('#files').innerHTML = files.map((f) => `<a href="${url(f)}" download="${esc(f.split('/').pop())}">${esc(f)}</a>`).join('');
@@ -801,7 +836,12 @@ window.addEventListener('hashchange', () => {
   if (id !== active && (id === 'home' || SPECIAL[id] || jobById(id))) show(id);
 });
 
-api('/api/account').then(({ account }) => renderAccountChip(account)).catch(() => {});
+api('/api/account').then(({ account, cavemanInstalled: installed }) => {
+  renderAccountChip(account);
+  cavemanInstalled = installed;
+  setupRunOptions(form);
+  setupRunOptions($('#reviseForm'));
+}).catch(() => {});
 
 refresh().then(() => {
   const id = location.hash.slice(1);
