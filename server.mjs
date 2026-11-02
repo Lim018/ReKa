@@ -222,14 +222,18 @@ function describeTool(name, input = {}) {
 
 // Antigravity tool -> Claude Code tool name, for the shared log format.
 const AGY_TOOLS = {
-  run_command: 'Bash', write_file: 'Write', write_to_file: 'Write', replace_file_content: 'Edit',
+  run_command: 'Bash', write_file: 'Write', write_to_file: 'Write', edit_file: 'Edit', replace_file_content: 'Edit',
   multi_replace_file_content: 'Edit', sed_file: 'Edit', read_file: 'Read', view_file: 'Read',
   list_dir: 'Glob', find_by_name: 'Glob', grep_search: 'Grep',
 };
+// Tools outside the map (e.g. agy's own task/timer tools for async commands) show their parameters,
+// so anything unexpected is visible in the history.
 function describeAgyTool(name, p = {}) {
   const tool = AGY_TOOLS[name] ?? name;
   const path = p.Path ?? p.TargetFile ?? p.AbsolutePath ?? p.File ?? p.DirectoryPath ?? p.SearchPath;
-  const text = tool === 'Bash' ? p.CommandLine : path ? String(path).replace(ROOT + sep, '') : p.Query ?? p.Pattern ?? '';
+  const text = tool === 'Bash' ? p.CommandLine
+    : path ? String(path).replace(ROOT + sep, '')
+    : p.Query ?? p.Pattern ?? JSON.stringify(Object.fromEntries(Object.entries(p).filter(([k]) => k !== 'toolSummary'))).slice(0, 160);
   return { tool, text: String(text ?? '') };
 }
 
