@@ -1,4 +1,4 @@
-// Usage: node scripts/render.mjs <file.html> <out.png> [--width 1440] [--viewport-only] [--wait 800] [--slices <dir>]
+// Usage: node scripts/render.mjs <file.html> <out.png> [--width 1440] [--height 900] [--viewport-only] [--wait 800] [--slices <dir>]
 // Renders a standalone HTML file to PNG with headless Chromium (full page by default).
 // Pages may animate: it scrolls through once so scroll/IntersectionObserver reveals fire, waits for
 // finite animations to finish, then gives canvas/WebGL scenes --wait ms to draw. JavaScript errors are
@@ -15,21 +15,23 @@ const option = (name, fallback) => {
   const i = args.indexOf(name);
   return i >= 0 ? Number(args[i + 1]) : fallback;
 };
-const VALUE_FLAGS = ['--width', '--wait', '--slices'];
+const VALUE_FLAGS = ['--width', '--height', '--wait', '--slices'];
 const [input, output] = args.filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.includes(args[i - 1]));
 const slicesDir = args.includes('--slices') ? args[args.indexOf('--slices') + 1] : null;
 const width = option('--width', 1440);
+const height = option('--height', 900);
 const settle = option('--wait', 800);
 const fullPage = !args.includes('--viewport-only');
 
-if (!input || !output) fail('usage: render.mjs <file.html> <out.png> [--width 1440] [--viewport-only] [--wait 800] [--slices <dir>]');
+if (!input || !output) fail('usage: render.mjs <file.html> <out.png> [--width 1440] [--height 900] [--viewport-only] [--wait 800] [--slices <dir>]');
 if (!Number.isInteger(width) || width < 200) fail('--width must be an integer >= 200');
+if (!Number.isInteger(height) || height < 200) fail('--height must be an integer >= 200');
 if (!Number.isFinite(settle) || settle < 0) fail('--wait must be a number of milliseconds');
 if (args.includes('--slices') && !slicesDir) fail('--slices needs a directory');
 
 const browser = await chromium.launch();
 try {
-  const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: 2 });
+  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 2 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
@@ -65,7 +67,7 @@ try {
     mkdirSync(slicesDir, { recursive: true });
     const total = await page.evaluate(() => document.documentElement.scrollHeight);
     let n = 0;
-    for (let y = 0; y < total; y += 900) {
+    for (let y = 0; y < total; y += height) {
       await page.evaluate((top) => scrollTo(0, top), y);
       await page.waitForTimeout(250);
       await page.screenshot({ path: join(slicesDir, `${String(++n).padStart(2, '0')}.png`), animations: 'allow' });

@@ -15,6 +15,7 @@ const USAGE_FILE = join(OUTPUT, '.usage.json');
 const PORT = Number(process.env.PORT) || 4000;
 const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
 const OUTPUTS = ['png', 'html', 'design.md'];
+const PLATFORMS = { web: 'web (website / web app)', mobile: 'mobile app (ikuti bagian 6A skill)' };
 // Model aliases available on the subscription ('' = Claude Code's own default). Fable needs usage credits.
 const MODELS = { opus: 'Opus 5.5', sonnet: 'Sonnet 5.5', haiku: 'Haiku 5.5' };
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -361,6 +362,8 @@ async function createJob(req, res) {
   const outputs = OUTPUTS.filter((o) => (body.outputs ?? []).includes(o));
   if (!outputs.length) throw new HttpError(400, 'Pilih minimal satu output');
   const runOptions = pickRunOptions(body);
+  const platform = body.platform ?? 'web';
+  if (!PLATFORMS[platform]) throw new HttpError(400, 'Platform harus web atau mobile');
 
   let source = String(body.source ?? '').trim();
   let sourceKind = null;
@@ -408,6 +411,7 @@ async function createJob(req, res) {
   const lines = [
     `/design-generator`,
     `Mode: ${mode}.`,
+    `Platform: ${PLATFORMS[platform]}.`,
     sourceKind && `Sumber (${sourceKind}): ${source}`,
     uploaded && `File upload dari user: ${uploaded}`,
     brief && `Brief: ${brief}`,
@@ -419,7 +423,7 @@ async function createJob(req, res) {
   ];
   const title = brief.length > 80 ? brief.slice(0, 80).replace(/\s+\S*$/, '') + '…' : brief || label;
   const meta = {
-    id, title, mode, brief, source: source || null, upload: uploaded, outputs,
+    id, title, mode, platform, brief, source: source || null, upload: uploaded, outputs,
     sessionId: randomUUID(), extractTarget, extraDir, ...runOptions,
     status: 'running', createdAt: new Date().toISOString(), revisions: [],
   };

@@ -72,6 +72,12 @@ mengapa pola itu benar untuk klien ini.
 | **design** | Deskripsi/brief tanpa sistem lama | Tujuan halaman, audiens, gaya/mood, jenis halaman |
 | **redesign** | URL, path file `.html`, gambar screenshot, atau folder kode | Sumber + arah perubahan (jika tidak disebut: perbaiki konsep, hierarki, keterbacaan, aksesibilitas) |
 
+**Platform** (dari prompt; default `web`):
+- **web**: website, landing page, atau web app. Ikuti bagian 6. Desktop dan mobile web dirancang
+  dua-duanya.
+- **mobile**: aplikasi mobile native (iOS kecuali brief menyebut Android). Ikuti bagian 6 **dan**
+  bagian 6A. Yang didesain adalah layar-layar aplikasi, bukan website.
+
 **Output** yang diminta user: `design.md`, `html`, `png` (default: ketiganya). `tokens.json` dan
 `design.md` selalu dibuat karena keduanya sumber kebenaran. Jika user meminta PNG, `index.html` juga
 dibuat, karena PNG dirender dari HTML.
@@ -150,6 +156,8 @@ Nilai di dalamnya harus sama persis dengan `tokens.json`. Tulis dalam bahasa yan
 5. **Warna**: tabel token, hex, peran, dan rasio kontras dari output validate. Sertakan *do/don't*.
 6. **Tipografi**: font beserta alasan, skala (token → px → penggunaan), line-height, aturan weight.
 7. **Layout & ritme**: grid, max-width, breakpoint, dan bagaimana ritme antar section diatur.
+   Untuk platform mobile: **Platform & navigasi**, yaitu pola navigasi (tab bar, stack, sheet),
+   peta layar dan alurnya, safe area, serta gesture.
 8. **Signature element**: apa, mengapa, dan bagaimana dibangun.
 9. **Motion & interaksi**: prinsip (kapan bergerak, kapan diam), durasi/easing dari token, daftar
    animasi dan maknanya, serta perilaku saat `prefers-reduced-motion`.
@@ -201,11 +209,51 @@ Nilai di dalamnya harus sama persis dengan `tokens.json`. Tulis dalam bahasa yan
 - Performa: animasi hanya pada `transform` dan `opacity`, tanpa layout thrash, dan
   `requestAnimationFrame` dihentikan saat tidak terlihat.
 
+## 6A. Platform mobile app
+
+Berlaku jika platform = `mobile`. Semua aturan bagian 0 dan 6 tetap berlaku.
+
+**Cakupan**: 4–6 layar inti yang membentuk **satu alur utama yang utuh** dan bermakna untuk
+aplikasi ini (misalnya beranda → detail → aksi utama → konfirmasi, ditambah satu layar khas).
+Splash, login, dan onboarding hanya disertakan jika memang inti dari pengalaman aplikasinya.
+Untuk redesign, pertahankan alur dan fitur aplikasi lama tetapi rancang ulang penyajiannya.
+
+**Konvensi native** (desain harus terasa seperti aplikasi, bukan website yang dikecilkan):
+- Frame 390×844. Safe area atas 47px (status bar) dan bawah 34px (home indicator). Gambar status
+  bar sederhana (jam, sinyal, baterai) di setiap layar.
+- Navigasi yang jelas: tab bar bawah (3–5 item) atau stack dengan tombol kembali, sheet untuk
+  aksi sekunder, dan FAB hanya jika memang aksi utama.
+- Target sentuh minimal 44×44, aksi utama berada di jangkauan jempol (sepertiga bawah layar),
+  body 16–17px, dan tidak ada hover sebagai satu-satunya petunjuk interaksi.
+- State yang nyata: kosong, memuat (skeleton), dan sukses. Tunjukkan minimal satu di antaranya.
+- Motion mengikuti fisika aplikasi: transisi push/pop antar layar, sheet yang naik dari bawah,
+  dan umpan balik saat ditekan.
+
+**Struktur `index.html`** (satu file, dua tampilan):
+- Setiap layar adalah `<section class="screen" id="...">` berukuran 390×844 dengan
+  `aria-label` berisi nama layar.
+- **Lebar layar ≥ 500px: papan presentasi.** Semua layar tampil berjajar di dalam bingkai ponsel
+  (digambar dengan CSS), masing-masing dengan nama layar dan satu kalimat tujuannya di bawahnya,
+  di atas latar yang tetap mengikuti konsep. Papan diawali judul proyek dan ringkasan alur.
+- **Lebar layar < 500px: prototype interaktif.** Hanya satu layar yang tampil memenuhi viewport.
+  Elemen yang bisa diketuk berpindah ke layar lain lewat hash (`#home`, `#detail`, ...) dengan
+  transisi push/pop. Layar pertama adalah titik masuk alur.
+- Konten tetap terlihat jika JS gagal: papan tidak bergantung pada JS.
+
+**Render untuk platform mobile** (menggantikan perintah render di bagian 7):
+```
+node scripts/render.mjs output/<slug>/index.html output/<slug>/preview-board.png --width 1440 --slices output/<slug>/review/board
+node scripts/render.mjs output/<slug>/index.html output/<slug>/preview-mobile.png --width 390 --height 844 --viewport-only
+```
+Lihat papan (full page dan slices) dan layar pertama di ukuran ponsel. Rubrik bagian 7 berlaku,
+dengan kriteria "Mobile" diganti menjadi **Native feel**: apakah ini terasa seperti aplikasi yang
+bisa dirilis di App Store/Play Store?
+
 ## 7. Periksa, render, dan kritik diri
 
 1. `node scripts/lint.mjs output/<slug>/index.html`: perbaiki **semua error**. Warning tentang
    kata klise juga ditulis ulang.
-2. Render:
+2. Render (platform web; untuk mobile app gunakan perintah di bagian 6A):
    ```
    node scripts/render.mjs output/<slug>/index.html output/<slug>/preview-desktop.png --width 1440
    node scripts/render.mjs output/<slug>/index.html output/<slug>/preview-mobile.png --width 390
