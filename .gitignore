@@ -2,3 +2,4 @@ node_modules/
 output/
 .env
 .claude/settings.local.json
+.claude/skills/caveman-learn/
