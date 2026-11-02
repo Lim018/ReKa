@@ -66,8 +66,34 @@ svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
 .nav:hover { background: var(--panel); }
 .nav[aria-current="true"] { background: var(--panel-active); }
 .nav .count { margin-left: auto; font-size: 12px; color: var(--muted); }
-.side-foot { margin-top: auto; padding: 12px; font-size: 12px; color: var(--muted); line-height: 1.45; }
-.side-foot strong { color: var(--text); display: block; font-size: 13px; margin-bottom: 2px; }
+.account-btn {
+  margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px;
+  background: none; border: 1px solid transparent; text-align: left; color: var(--text); min-width: 0;
+}
+.account-btn:hover, .account-btn[aria-current="true"] { background: var(--panel); border-color: var(--border); }
+.avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; font-weight: 700; font-size: 13px; background: var(--primary); color: var(--on-primary); }
+.account-btn .who { min-width: 0; display: grid; flex: 1; }
+.account-btn .who b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-btn .who span { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-btn > svg.i { color: var(--muted); }
+
+/* Settings */
+.settings { max-width: 760px; display: grid; gap: 16px; }
+.kv { display: grid; grid-template-columns: 160px 1fr; gap: 10px 16px; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+.plan { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--panel-active); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.meter { display: grid; gap: 6px; }
+.meter + .meter { margin-top: 16px; }
+.meter-top { display: flex; justify-content: space-between; gap: 12px; }
+.meter-top b { font-weight: 600; }
+.bar { height: 8px; border-radius: 999px; background: var(--chrome); overflow: hidden; }
+.bar > span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+.bar.warn > span { background: var(--warn); } .bar.full > span { background: var(--danger); }
+.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.panel-head h2 { margin: 0; }
+.note { font-size: 12px; color: var(--muted); margin: 14px 0 0; }
+@media (max-width: 760px) { .kv { grid-template-columns: 1fr; gap: 2px; } .kv dd { margin-bottom: 8px; } }
 
 main { overflow-y: auto; padding: 18px 24px 40px; min-width: 0; }
 
@@ -179,6 +205,7 @@ details[open] summary { margin-bottom: 12px; }
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z"/></symbol>
   <symbol id="i-redo" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3L4 15"/><path d="M4 20v-5h5"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M10 9l5 3-5 3z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></symbol>
 </svg>
 
@@ -199,7 +226,11 @@ details[open] summary { margin-bottom: 12px; }
       <button class="nav" type="button" data-nav="new"><svg class="i"><use href="#i-plus"/></svg>Desain baru</button>
       <button class="nav" type="button" data-nav="design"><svg class="i"><use href="#i-spark"/></svg>Design<span class="count" id="countDesign"></span></button>
       <button class="nav" type="button" data-nav="redesign"><svg class="i"><use href="#i-redo"/></svg>Redesign<span class="count" id="countRedesign"></span></button>
-      <div class="side-foot"><strong>ReKa</strong>Claude Code lokal · langganan Claude Anda</div>
+      <button class="account-btn" id="accountBtn" type="button" aria-label="Pengaturan akun dan pemakaian">
+        <span class="avatar" id="accAvatar">?</span>
+        <span class="who"><b id="accName">Memuat akun…</b><span id="accPlan">Claude Code</span></span>
+        <svg class="i"><use href="#i-gear"/></svg>
+      </button>
     </nav>
 
     <main id="main">
@@ -258,6 +289,29 @@ details[open] summary { margin-bottom: 12px; }
         </div>
       </section>
 
+      <!-- Settings -->
+      <section id="settingsView" hidden>
+        <div class="settings">
+          <div class="proj-head">
+            <span class="glyph lg" style="background:#5d6475"><svg class="i"><use href="#i-gear"/></svg></span>
+            <div class="meta"><h1>Pengaturan</h1><p>Akun Claude Code yang dipakai server ini untuk generate.</p></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Akun</h2></div>
+            <dl class="kv" id="accountKv"><dt>Status</dt><dd class="muted">Memuat…</dd></dl>
+            <p class="note">Untuk ganti akun, jalankan <code>claude auth logout</code> lalu <code>claude auth login</code> di terminal, kemudian buka ulang halaman ini.</p>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Pemakaian langganan</h2>
+              <button class="btn" type="button" id="usageBtn">Cek sekarang</button>
+            </div>
+            <div id="usageBox"></div>
+            <p class="note" id="usageNote"></p>
+          </div>
+        </div>
+      </section>
+
       <!-- Project tab -->
       <section id="jobView" hidden>
         <div class="proj-head">
@@ -296,12 +350,19 @@ details[open] summary { margin-bottom: 12px; }
 const $ = (s) => document.querySelector(s);
 const STATUS = { running: 'Berjalan', done: 'Selesai', failed: 'Gagal', cancelled: 'Dibatalkan', interrupted: 'Terputus' };
 const COLORS = ['#e2622f', '#c8306a', '#3b82c4', '#2f9e6e', '#8a5cf6', '#d4912a', '#2a9fb0', '#c2453d'];
+// Tabs that are views rather than projects.
+const SPECIAL = {
+  new: { label: 'Desain baru', icon: 'i-plus', color: 'var(--primary)' },
+  settings: { label: 'Pengaturan', icon: 'i-gear', color: '#5d6475' },
+};
+const isProject = (t) => t !== 'home' && !SPECIAL[t];
+let openSpecial = [];     // SPECIAL keys open as tabs
 const DROP_TEXT = 'Tarik file ke sini atau <strong>klik untuk memilih</strong> (png, jpg, webp, html, maks 15MB)';
 
 let jobs = [];
 let running = false;
 let openTabs = [];        // project ids open as tabs
-let active = 'home';      // 'home' | 'new' | project id
+let active = 'home';      // 'home' | a SPECIAL key | project id
 let filter = null;        // null | 'design' | 'redesign' | 'running'
 let stream = null;
 let pickedFile = null;
@@ -331,7 +392,7 @@ async function refresh() {
   jobs = data.jobs;
   running = data.running;
   openTabs = openTabs.filter((id) => jobById(id));
-  if (active !== 'home' && active !== 'new' && !jobById(active)) active = 'home';
+  if (isProject(active) && !jobById(active)) active = 'home';
   saveTabs();
   renderChrome();
   if (active === 'home') renderHome();
@@ -341,17 +402,17 @@ async function refresh() {
 function renderChrome() {
   const bar = $('#openTabs');
   bar.innerHTML = '';
-  const entries = [...openTabs.map((id) => jobById(id)), ...(active === 'new' ? [{ id: 'new' }] : [])];
+  const entries = [...openTabs.map((id) => jobById(id)), ...openSpecial.map((id) => ({ id }))];
   for (const job of entries) {
-    const isNew = job.id === 'new';
+    const sp = SPECIAL[job.id];
     const el = document.createElement('div');
     el.className = 'tab';
     el.role = 'tab';
     el.tabIndex = 0;
-    el.title = isNew ? 'Desain baru' : job.title || job.id;
+    el.title = sp ? sp.label : job.title || job.id;
     el.setAttribute('aria-selected', active === job.id);
-    el.innerHTML = `${isNew ? '<span class="glyph sm" style="background:var(--primary)"><svg class="i"><use href="#i-plus"/></svg></span>' : glyph(job, 'sm')}
-      <span class="label">${esc(isNew ? 'Desain baru' : job.title || job.id)}</span>
+    el.innerHTML = `${sp ? `<span class="glyph sm" style="background:${sp.color}"><svg class="i"><use href="#${sp.icon}"/></svg></span>` : glyph(job, 'sm')}
+      <span class="label">${esc(sp ? sp.label : job.title || job.id)}</span>
       <button class="x" type="button" aria-label="Tutup tab"><svg class="i"><use href="#i-x"/></svg></button>`;
     el.onclick = (e) => (e.target.closest('.x') ? closeTab(job.id) : show(job.id));
     el.onauxclick = (e) => { if (e.button === 1) closeTab(job.id); };
@@ -361,35 +422,40 @@ function renderChrome() {
   document.querySelector('.tab.home').setAttribute('aria-selected', active === 'home');
   document.querySelector('.tab[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
-  const navKey = active === 'new' ? 'new' : active === 'home' ? (filter === 'design' || filter === 'redesign' ? filter : 'home') : null;
+  const navKey = SPECIAL[active] ? active : active === 'home' ? (filter === 'design' || filter === 'redesign' ? filter : 'home') : null;
   document.querySelectorAll('.side .nav').forEach((n) => n.setAttribute('aria-current', n.dataset.nav === navKey));
   $('#countAll').textContent = jobs.length;
   $('#countDesign').textContent = jobs.filter((j) => j.mode === 'design').length;
   $('#countRedesign').textContent = jobs.filter((j) => j.mode === 'redesign').length;
   $('#submitBtn').disabled = running;
+  $('#accountBtn').setAttribute('aria-current', active === 'settings');
 }
 
 function show(target) {
   active = target;
-  if (target !== 'home' && target !== 'new' && !openTabs.includes(target)) openTabs.push(target);
+  if (isProject(target) && !openTabs.includes(target)) openTabs.push(target);
+  if (SPECIAL[target] && !openSpecial.includes(target)) openSpecial.push(target);
   saveTabs();
   stream?.close();
   stream = null;
   $('#homeView').hidden = target !== 'home';
   $('#newView').hidden = target !== 'new';
-  $('#jobView').hidden = target === 'home' || target === 'new';
+  $('#settingsView').hidden = target !== 'settings';
+  $('#jobView').hidden = !isProject(target);
   history.replaceState(null, '', target === 'home' ? '/' : `#${target}`);
   $('#main').scrollTop = 0;
   renderChrome();
   if (target === 'home') renderHome();
   else if (target === 'new') form.brief.focus();
+  else if (target === 'settings') loadAccount();
   else openJob(target);
 }
 
 function closeTab(id) {
-  const order = [...openTabs, ...(active === 'new' ? ['new'] : [])];
+  const order = [...openTabs, ...openSpecial];
   const idx = order.indexOf(id);
   openTabs = openTabs.filter((t) => t !== id);
+  openSpecial = openSpecial.filter((t) => t !== id);
   saveTabs();
   if (active === id) {
     const rest = order.filter((t) => t !== id);
@@ -592,12 +658,79 @@ $('#reviseForm').onsubmit = async (e) => {
   }
 };
 
+// ---- Account & usage ----
+const WINDOWS = { five_hour: 'Batas 5 jam', seven_day: 'Batas 7 hari', seven_day_opus: 'Batas 7 hari (Opus)', seven_day_sonnet: 'Batas 7 hari (Sonnet)' };
+const fmtReset = (sec) => sec ? new Date(sec * 1000).toLocaleString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-';
+
+function renderAccountChip(acc) {
+  const name = acc.loggedIn ? acc.email || 'Akun Claude' : 'Belum login';
+  $('#accAvatar').textContent = acc.loggedIn ? name[0].toUpperCase() : '!';
+  $('#accName').textContent = name;
+  $('#accName').title = name;
+  $('#accPlan').textContent = !acc.loggedIn ? 'Jalankan claude auth login'
+    : acc.plan ? `Claude ${acc.plan[0].toUpperCase()}${acc.plan.slice(1)}` : 'Claude Code';
+}
+
+function renderUsage(usage) {
+  if (!usage) {
+    $('#usageBox').innerHTML = '<p class="muted" style="margin:0">Belum ada data. Data terisi otomatis setelah generate pertama, atau klik “Cek sekarang”.</p>';
+    $('#usageNote').textContent = '';
+    return;
+  }
+  $('#usageBox').innerHTML = Object.entries(usage.unifiedWindows).map(([key, w]) => {
+    const pct = Math.round((w.utilization ?? 0) * 100);
+    const cls = pct >= 100 || w.status === 'rejected' ? 'full' : pct >= 80 ? 'warn' : '';
+    return `<div class="meter">
+      <div class="meter-top"><b>${esc(WINDOWS[key] ?? key)}</b><span>${pct}% terpakai</span></div>
+      <div class="bar ${cls}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="${esc(WINDOWS[key] ?? key)}"><span style="width:${Math.min(pct, 100)}%"></span></div>
+      <span class="muted" style="font-size:12px">Reset ${esc(fmtReset(w.resetsAt))}</span>
+    </div>`;
+  }).join('');
+  const overage = usage.isUsingOverage ? 'Sedang memakai extra usage. ' : '';
+  $('#usageNote').textContent = `${overage}Diperbarui ${fmtDate(usage.checkedAt)}. Angka ini sama dengan batas pemakaian langganan di Claude Code dan claude.ai.`;
+}
+
+async function loadAccount() {
+  try {
+    const { account: acc, usage } = await api('/api/account');
+    renderAccountChip(acc);
+    const plan = acc.plan ? `<span class="plan">${esc(acc.plan)}</span>` : '-';
+    $('#accountKv').innerHTML = acc.loggedIn ? `
+      <dt>Status</dt><dd><span class="badge s-done">Login</span></dd>
+      <dt>Email</dt><dd>${esc(acc.email ?? '-')}</dd>
+      <dt>Organisasi</dt><dd>${esc(acc.orgName ?? '-')}</dd>
+      <dt>Paket</dt><dd>${plan}</dd>
+      <dt>Metode login</dt><dd>${esc(acc.authMethod === 'claude.ai' ? 'Langganan Claude (claude.ai)' : acc.authMethod ?? '-')}</dd>`
+      : `<dt>Status</dt><dd><span class="badge s-failed">Belum login</span></dd><dt>Detail</dt><dd>${esc(acc.error ?? 'Jalankan claude auth login di terminal.')}</dd>`;
+    renderUsage(usage);
+  } catch (e) {
+    $('#accountKv').innerHTML = `<dt>Status</dt><dd class="error">${esc(e.message)}</dd>`;
+  }
+}
+
+$('#accountBtn').onclick = () => show('settings');
+$('#usageBtn').onclick = async () => {
+  const btn = $('#usageBtn');
+  btn.disabled = true;
+  btn.textContent = 'Mengecek…';
+  try {
+    renderUsage((await api('/api/usage', { method: 'POST' })).usage);
+  } catch (e) {
+    $('#usageNote').textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Cek sekarang';
+  }
+};
+
 // Keep tab status dots and the project grid current while something is running.
 setInterval(() => { if (running) refresh(); }, 5000);
 
+api('/api/account').then(({ account }) => renderAccountChip(account)).catch(() => {});
+
 refresh().then(() => {
   const id = location.hash.slice(1);
-  show(id === 'new' ? 'new' : id && jobById(id) ? id : 'home');
+  show(SPECIAL[id] ? id : id && jobById(id) ? id : 'home');
 });
 </script>
 </body>

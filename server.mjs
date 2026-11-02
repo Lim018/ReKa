@@ -2,13 +2,14 @@
 // Claude login, so it is for personal use on this machine only: it binds to 127.0.0.1 and rejects
 // requests from other hosts/origins.
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, createReadStream } from 'node:fs';
 import { join, resolve, extname, basename, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = join(ROOT, 'output');
+const USAGE_FILE = join(OUTPUT, '.usage.json');
 const PORT = Number(process.env.PORT) || 4000;
 const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
 const OUTPUTS = ['png', 'html', 'design.md'];
@@ -40,6 +41,18 @@ const writeMeta = (id, meta) => writeFileSync(metaPath(id), JSON.stringify(meta,
 for (const id of readdirSync(OUTPUT)) {
   const meta = readMeta(id);
   if (meta?.status === 'running') writeMeta(id, { ...meta, status: 'interrupted' });
+}
+
+// Latest plan-usage snapshot reported by Claude Code (rate_limit_event), kept across restarts.
+function saveUsage(info) {
+  if (info?.unifiedWindows) writeFileSync(USAGE_FILE, JSON.stringify({ ...info, checkedAt: new Date().toISOString() }, null, 2));
+}
+function readUsage() {
+  try {
+    return JSON.parse(readFileSync(USAGE_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 class HttpError extends Error {
@@ -178,6 +191,8 @@ function runClaude(id, prompt, { extractTarget = null, extraDir = null } = {}) {
             pushLog(id, { kind: 'warn', text: text.slice(0, 400) });
           }
         }
+      } else if (ev.type === 'rate_limit_event') {
+        saveUsage(ev.rate_limit_info);
       } else if (ev.type === 'result') {
         result = ev;
       }
@@ -216,6 +231,44 @@ function stopJob(id, reason) {
   if (!job?.proc) return;
   job.stopReason = reason;
   job.proc.kill('SIGTERM');
+}
+
+// ---- Account & usage ------------------------------------------------------------------------
+
+function accountInfo() {
+  return new Promise((ok) => {
+    execFile('claude', ['auth', 'status', '--json'], { cwd: ROOT, timeout: 15000 }, (err, stdout) => {
+      try {
+        const a = JSON.parse(stdout);
+        ok({ loggedIn: a.loggedIn, authMethod: a.authMethod, email: a.email ?? null, orgName: a.orgName ?? null, plan: a.subscriptionType ?? null });
+      } catch {
+        ok({ loggedIn: false, error: err?.message || 'Tidak bisa membaca status login Claude Code' });
+      }
+    });
+  });
+}
+
+// Claude Code has no standalone usage command; a minimal prompt with no tools returns the current
+// rate-limit snapshot. It costs a tiny amount of the plan's quota.
+function checkUsage() {
+  return new Promise((ok, fail) => {
+    const proc = spawn('claude', ['-p', 'Reply with: ok', '--output-format', 'stream-json', '--verbose', '--tools', '',
+      '--strict-mcp-config', '--no-session-persistence'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    proc.stdout.on('data', (c) => (out += c));
+    const timer = setTimeout(() => proc.kill('SIGTERM'), 60000);
+    proc.on('error', (e) => fail(new HttpError(500, `Gagal menjalankan claude: ${e.message}`)));
+    proc.on('close', () => {
+      clearTimeout(timer);
+      for (const line of out.split('\n')) {
+        try {
+          const ev = JSON.parse(line);
+          if (ev.type === 'rate_limit_event') saveUsage(ev.rate_limit_info);
+        } catch {}
+      }
+      ok(readUsage());
+    });
+  });
 }
 
 // ---- Request handlers ------------------------------------------------------------------------
@@ -347,6 +400,8 @@ async function handle(req, res) {
     return sendJson(res, 200, { running: isRunning(), jobs });
   }
   if (req.method === 'POST' && path === '/api/jobs') return createJob(req, res);
+  if (req.method === 'GET' && path === '/api/account') return sendJson(res, 200, { account: await accountInfo(), usage: readUsage() });
+  if (req.method === 'POST' && path === '/api/usage') return sendJson(res, 200, { usage: await checkUsage() });
   if (m && existsSync(join(OUTPUT, m[1]))) {
     const [, id, action] = m;
     if (req.method === 'GET' && !action) return sendJson(res, 200, jobSummary(id));
