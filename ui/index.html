@@ -744,7 +744,7 @@ async function renderJob(id) {
   $('#cavemanReceipt').innerHTML = r
     ? `Caveman: <b>berjalan</b> di session ini · ${r.events} event · mode ${esc(r.mode ?? '-')} · kompresi <b>${r.tokensBefore} → ${r.tokensAfter}</b> token · receipt ${esc(fmtDate(r.generatedAt))}`
     : 'Caveman: tidak ada receipt untuk session ini (caveman tidak berjalan).';
-  const files = job.files.filter((f) => !f.startsWith('input/'));
+  const files = job.files.filter((f) => !f.startsWith('input/') && !f.startsWith('review/'));
   $('#filesBox').hidden = !files.length;
   $('#files').innerHTML = files.map((f) => `<a href="${url(f)}" download="${esc(f.split('/').pop())}">${esc(f)}</a>`).join('');
 }

@@ -212,7 +212,11 @@ Nilai di dalamnya harus sama persis dengan `tokens.json`. Tulis dalam bahasa yan
    ```
    Render men-scroll halaman supaya reveal terpicu, menunggu animasi, lalu mencetak error
    JavaScript. **Error JS harus nol.** Untuk scene 3D yang berat, tambahkan `--wait 1500`.
-3. **Lihat kedua PNG** dengan Read, lalu nilai dengan jujur (skor 1–5):
+   PNG full-page yang tinggi akan mengecil saat dilihat. Untuk memeriksa detail, tambahkan
+   `--slices output/<slug>/review/desktop` (atau `.../review/mobile`) agar setiap layar disimpan
+   terpisah (`01.png`, `02.png`, ...) dengan resolusi penuh. Jangan memotong gambar dengan alat lain.
+3. **Lihat PNG** (full page untuk gambaran besar, slices untuk detail) dengan Read, lalu nilai
+   dengan jujur (skor 1–5):
 
    | Kriteria | Pertanyaan |
    |---|---|

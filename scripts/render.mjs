@@ -1,11 +1,13 @@
-// Usage: node scripts/render.mjs <file.html> <out.png> [--width 1440] [--viewport-only] [--wait 800]
+// Usage: node scripts/render.mjs <file.html> <out.png> [--width 1440] [--viewport-only] [--wait 800] [--slices <dir>]
 // Renders a standalone HTML file to PNG with headless Chromium (full page by default).
 // Pages may animate: it scrolls through once so scroll/IntersectionObserver reveals fire, waits for
 // finite animations to finish, then gives canvas/WebGL scenes --wait ms to draw. JavaScript errors are
 // reported so a broken page is never mistaken for a finished one.
+// --slices <dir> also saves one screenshot per screen (01.png, 02.png, ...) so a tall page can be
+// reviewed at full resolution.
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { toUrl, fail } from './lib.mjs';
 
 const args = process.argv.slice(2);
@@ -13,14 +15,17 @@ const option = (name, fallback) => {
   const i = args.indexOf(name);
   return i >= 0 ? Number(args[i + 1]) : fallback;
 };
-const [input, output] = args.filter((a, i) => !a.startsWith('--') && !['--width', '--wait'].includes(args[i - 1]));
+const VALUE_FLAGS = ['--width', '--wait', '--slices'];
+const [input, output] = args.filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.includes(args[i - 1]));
+const slicesDir = args.includes('--slices') ? args[args.indexOf('--slices') + 1] : null;
 const width = option('--width', 1440);
 const settle = option('--wait', 800);
 const fullPage = !args.includes('--viewport-only');
 
-if (!input || !output) fail('usage: render.mjs <file.html> <out.png> [--width 1440] [--viewport-only] [--wait 800]');
+if (!input || !output) fail('usage: render.mjs <file.html> <out.png> [--width 1440] [--viewport-only] [--wait 800] [--slices <dir>]');
 if (!Number.isInteger(width) || width < 200) fail('--width must be an integer >= 200');
 if (!Number.isFinite(settle) || settle < 0) fail('--wait must be a number of milliseconds');
+if (args.includes('--slices') && !slicesDir) fail('--slices needs a directory');
 
 const browser = await chromium.launch();
 try {
@@ -55,6 +60,18 @@ try {
   mkdirSync(dirname(output), { recursive: true });
   await page.screenshot({ path: output, fullPage, animations: 'allow' });
   console.log(`Rendered ${output} (${width}px wide${fullPage ? ', full page' : ''})`);
+
+  if (slicesDir) {
+    mkdirSync(slicesDir, { recursive: true });
+    const total = await page.evaluate(() => document.documentElement.scrollHeight);
+    let n = 0;
+    for (let y = 0; y < total; y += 900) {
+      await page.evaluate((top) => scrollTo(0, top), y);
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: join(slicesDir, `${String(++n).padStart(2, '0')}.png`), animations: 'allow' });
+    }
+    console.log(`Saved ${n} screen slices in ${slicesDir}`);
+  }
   if (errors.length) {
     console.log(`WARNING: ${errors.length} JavaScript/loading error(s) — fix before finishing:`);
     for (const e of [...new Set(errors)].slice(0, 15)) console.log(`  - ${e}`);
