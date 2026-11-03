@@ -211,7 +211,8 @@ Nilai setiap kandidat dari kecocokan dengan audiens, konteks pakai, tugas utama,
 informasi, brand, dan **dampaknya pada kejelasan** (bagian 0). Tema yang membuat tombol atau teks
 kurang jelas langsung gugur, misalnya neumorphism untuk form panjang.
 
-**3.3 Cek keragaman.** Lihat `output/*/tokens.json` milik proyek lain (cukup 3–5 terbaru). Catat
+**3.3 Cek keragaman.** Lihat `output/*/tokens.json` milik proyek lain (cukup 3–5 terbaru) dengan
+Glob lalu Read, bukan loop atau perintah shell (shell lain ditolak di generator). Catat
 font dan palet yang sudah dipakai. Jangan memakai pasangan font yang sama atau keluarga palet yang
 sama (misalnya krem + terakota) kecuali brief benar-benar menuntutnya. Tulis hasil cek ini di
 `design.md`.
