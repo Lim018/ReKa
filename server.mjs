@@ -342,6 +342,7 @@ const ENGINES = {
           text: ok ? r.response
             : denied.length ? `Antigravity menghentikan run karena aksi di luar izin ReKa: ${denied.join(', ')}.`
             : r.finished_reason === 'print_timeout' ? 'Run melewati batas waktu.'
+            : r.error ? `Antigravity: ${r.error}`
             : r.response || `Antigravity selesai dengan status ${r.status ?? 'tidak diketahui'}.`,
         };
       }
