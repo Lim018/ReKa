@@ -56,6 +56,21 @@ Jalankan `claude` di folder ini, lalu:
 Hasil disimpan di `output/<slug>/`: `tokens.json`, `design.md`, `index.html`, `preview-desktop.png`, `preview-mobile.png`
 (redesign juga menghasilkan `source/original.png` + `source/styles.json`).
 
+## Filter antislop
+Skill [antislop](https://github.com/miqdadbadjuber/anti-slop) (MIT) dipasang di `.claude/skills/antislop*`
+dan ditautkan ke `.agents/skills/`, sehingga berlaku untuk generator (Claude Code dan Antigravity) maupun
+sesi Claude Code biasa di repo ini. Generator selalu memakai mode `during` tanpa bertanya. Pemetaan
+aturannya untuk run headless ada di bagian 0A skill `design-generator`.
+
+Baris `allowed-tools` di setiap `SKILL.md` antislop dihapus saat dipasang. Baris itu memberi izin
+Write/Edit tanpa batas dan `Bash(python *)` selama skill aktif, yang akan membuka pembatasan izin
+generator. Untuk update, jalankan pemasang yang sama pada clone baru:
+```
+git clone --depth 1 https://github.com/miqdadbadjuber/anti-slop.git /tmp/anti-slop
+node scripts/install-antislop.mjs /tmp/anti-slop
+```
+Di sesi Claude Code interaktif, antislop akan menanyakan mode (during/after) sekali per sesi.
+
 ## Isi
 | File | Fungsi |
 |---|---|

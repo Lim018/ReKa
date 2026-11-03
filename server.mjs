@@ -20,6 +20,8 @@ const PLATFORMS = { web: 'web (website / web app)', mobile: 'mobile app (ikuti b
 const MODELS = { opus: 'Opus 5.5', sonnet: 'Sonnet 5.5', haiku: 'Haiku 5.5' };
 const ENGINE_NAMES = { claude: 'Claude Code', antigravity: 'Antigravity' };
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+// antislop asks the user for its mode unless the session states one; nobody can answer in a headless run.
+const ANTISLOP_SESSION = 'Use antislop during for this session (session override), mapped as in design-generator section 0A.';
 const CAVEMAN_RECEIPTS = join(homedir(), '.caveman', 'receipts');
 const UPLOAD_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.html', '.htm']);
 const MAX_BODY = 20 * 1024 * 1024;
@@ -562,6 +564,7 @@ async function createJob(req, res) {
     extractTarget && `Untuk ekstraksi jalankan persis: node scripts/extract.mjs ${extractTarget} output/${id}/source`,
     `Jalankan semua tahap skill, termasuk arah kreatif (bagian 3), kritik diri dengan rubrik (bagian 7), dan suggestions.json (bagian 8).`,
     `Jangan bertanya ke user; ambil asumsi dan catat di design.md.`,
+    ANTISLOP_SESSION,
     engine === 'antigravity' && ENGINES.antigravity.rules(id, extractTarget),
   ];
   const title = brief.length > 80 ? brief.slice(0, 80).replace(/\s+\S*$/, '') + '…' : brief || label;
@@ -608,6 +611,7 @@ async function reviseJob(req, res, id) {
         `(tokens.json → validate → design.md → index.html → lint → render ulang → lihat PNG → perbarui suggestions.json), output: ${outputs}.`,
         `"Coba arah B/C" berarti membangun ulang dengan arah itu dari bagian Arah kreatif di design.md.`,
         `Jika ini pertanyaan, jawab saja tanpa mengubah file. Jangan bertanya balik ke user.`,
+        ANTISLOP_SESSION,
         engine === 'antigravity' && ENGINES.antigravity.rules(id, meta.extractTarget),
       ].filter(Boolean).join('\n')
     : [
@@ -616,6 +620,7 @@ async function reviseJob(req, res, id) {
         `Permintaan revisi: ${text}`,
         `Ikuti alur penyesuaian di bagian 9 supaya semua output tetap sinkron, termasuk lint dan suggestions.json. Output yang diminta: ${outputs}.`,
         `Jangan bertanya ke user.`,
+        ANTISLOP_SESSION,
         engine === 'antigravity' && ENGINES.antigravity.rules(id, meta.extractTarget),
       ].filter(Boolean).join('\n');
   runJob(id, engine, prompt, {

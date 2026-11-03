@@ -64,6 +64,34 @@ posisi sebelum memikirkan hal lain.
 → penjelas singkat → aksi utama. Kelompokkan elemen yang berhubungan (proximity) dan pisahkan yang
 tidak. Satu ide per section.
 
+## 0A. Filter antislop
+
+Proyek ini memasang skill **antislop** (`.claude/skills/antislop*`, dari
+github.com/miqdadbadjuber/anti-slop) sebagai filter tambahan. Muat dengan tool Skill (Claude Code)
+atau baca `SKILL.md`-nya (Antigravity, di `.agents/skills/`):
+- Selalu: `antislop` (inti, aturan R-01..R-40 dan Delivery Gate), `antislop-ui`, `antislop-copywriting`.
+- Platform mobile atau layout responsif yang rumit: `antislop-layoutmobile`.
+- Saat memeriksa aksesibilitas di bagian 7: `antislop-human`.
+
+Generator ini berjalan **tanpa user yang bisa ditanya**, jadi aturan antislop dipetakan begini:
+- **Mode**: selalu `during`. Jangan bertanya mode, jangan menulis file audit `anti-slop/`, dan jangan
+  membaca atau menulis `~/.config/antislop`. Notice "antislop active" cukup ditulis satu baris di
+  `design.md`.
+- **R-37 Design Direction & Design Read**: arah desain dibuat sendiri di bagian 3, dan `design.md`
+  proyek ini adalah `DESIGN.md`-nya. Karena itu hasil **bukan** "draft without direction". Tulis
+  baris Design Read (`Reading this as: …`) dan tiga dial ENERGY/RHYTHM/MOTION di bagian "Tema
+  visual & arah kreatif", lalu pegang dial itu sampai section terakhir.
+- **R-23 / R-38 (aset & konten)**: jangan bertanya. Pakai placeholder yang jujur: logo dari nama
+  produk dalam typeface yang tepat, avatar inisial, dan data yang tidak diketahui ditandai
+  **Contoh** atau tidak ditampilkan. Jangan mengarang testimoni, statistik, atau orang yang tampak
+  asli. Section kosong lebih baik daripada section karangan.
+- **Kontras (R-25)**: gunakan `node scripts/validate.mjs` (dan `contrastPairs` untuk pasangan
+  tambahan), bukan `contrast-check.py`. Python tidak diizinkan di generator.
+- **Delivery Gate**: jalankan di bagian 7 bersama rubrik, dan tulis hasilnya (lolos/gagal per blok,
+  beserta perbaikannya) di bagian "Review" `design.md`.
+- Jika antislop dan skill ini berbeda, ambil yang **lebih ketat**. Prinsip kejelasan di bagian 0
+  tetap berlaku.
+
 ## 0B. Anti AI-slop
 
 *Slop* adalah keputusan default yang muncul karena tidak ada keputusan. Pola di bawah **dilarang
