@@ -23,8 +23,10 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 // antislop asks the user for its mode unless the session states one; nobody can answer in a headless run.
 const ANTISLOP_SESSION = 'Use antislop during for this session (session override), mapped as in design-generator section 0A.';
 const CAVEMAN_RECEIPTS = join(homedir(), '.caveman', 'receipts');
-const UPLOAD_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.html', '.htm']);
-const MAX_BODY = 20 * 1024 * 1024;
+// Uploads give the agent context: screenshots, the old page, and notes/specs it can read.
+const UPLOAD_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.html', '.htm', '.css', '.js', '.md', '.txt', '.json', '.pdf']);
+const MAX_UPLOADS = 10;
+const MAX_BODY = 60 * 1024 * 1024;
 const JOB_TIMEOUT_MS = 30 * 60 * 1000;
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -183,7 +185,7 @@ function readBody(req) {
     req.on('data', (c) => {
       size += c.length;
       if (size > MAX_BODY) {
-        fail(new HttpError(413, 'Ukuran request maksimal 20MB'));
+        fail(new HttpError(413, 'Ukuran upload total terlalu besar (maksimal sekitar 40MB)'));
         req.destroy();
       } else chunks.push(c);
     });
@@ -530,25 +532,32 @@ async function createJob(req, res) {
     if (/\s/.test(source)) throw new HttpError(400, 'URL/path sumber tidak boleh mengandung spasi');
   }
   if (mode === 'design' && !brief) throw new HttpError(400, 'Isi brief desain');
-  if (mode === 'redesign' && !source && !body.file) throw new HttpError(400, 'Redesign butuh URL, path lokal, atau file upload');
-  const uploadName = body.file ? basename(String(body.file.name ?? '')).replace(/[^\w.-]+/g, '_') : null;
-  if (uploadName && !UPLOAD_EXT.has(extname(uploadName).toLowerCase())) throw new HttpError(400, 'File harus png, jpg, webp, atau html');
+  const files = Array.isArray(body.files) ? body.files : [];
+  if (files.length > MAX_UPLOADS) throw new HttpError(400, `Maksimal ${MAX_UPLOADS} file upload`);
+  // Safe, unique names: two files called index.html become index.html and index-2.html.
+  const taken = new Set();
+  const uploadNames = files.map((f) => {
+    const clean = basename(String(f?.name ?? '')).replace(/[^\w.-]+/g, '_').replace(/^\.+/, '') || 'file';
+    const ext = extname(clean).toLowerCase();
+    if (!UPLOAD_EXT.has(ext)) throw new HttpError(400, `${clean}: format tidak didukung (${[...UPLOAD_EXT].join(', ')})`);
+    let name = clean;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${clean.slice(0, -ext.length)}-${n}${ext}`;
+    taken.add(name.toLowerCase());
+    return name;
+  });
+  if (mode === 'redesign' && !source && !files.length) throw new HttpError(400, 'Redesign butuh URL, path lokal, atau file upload');
 
-  const label = brief || (sourceKind === 'url' ? new URL(source).hostname : basename(source || uploadName || 'redesign'));
+  const label = brief || (sourceKind === 'url' ? new URL(source).hostname : basename(source || uploadNames[0] || 'redesign'));
   const id = newJobId(label);
   const dir = join(OUTPUT, id);
   mkdirSync(dir, { recursive: true });
 
-  let uploaded = null;
-  if (uploadName) {
-    const name = uploadName;
-    mkdirSync(join(dir, 'input'), { recursive: true });
-    uploaded = `output/${id}/input/${name}`;
-    writeFileSync(join(ROOT, uploaded), Buffer.from(String(body.file.data ?? ''), 'base64'));
-  }
+  const uploads = uploadNames.map((name) => `output/${id}/input/${name}`);
+  if (uploads.length) mkdirSync(join(dir, 'input'), { recursive: true });
+  uploads.forEach((rel, i) => writeFileSync(join(ROOT, rel), Buffer.from(String(files[i].data ?? ''), 'base64')));
 
-  // The extract script may only be pointed at the source the user gave (URL, local HTML, or uploaded HTML).
-  const htmlUpload = uploaded && /\.html?$/i.test(uploaded) ? uploaded : null;
+  // The extract script may only be pointed at the source the user gave (URL, local HTML, or the first uploaded HTML).
+  const htmlUpload = uploads.find((u) => /\.html?$/i.test(u)) ?? null;
   const extractTarget = mode !== 'redesign' ? null
     : sourceKind === 'url' || (sourceKind === 'file' && /\.html?$/i.test(source)) ? source
     : htmlUpload;
@@ -558,7 +567,7 @@ async function createJob(req, res) {
     `Mode: ${mode}.`,
     `Platform: ${PLATFORMS[platform]}.`,
     sourceKind && `Sumber (${sourceKind}): ${source}`,
-    uploaded && `File upload dari user: ${uploaded}`,
+    uploads.length && `File upload dari user (baca semuanya sebagai sumber dan konteks tambahan: screenshot sistem lama, halaman, catatan, atau spesifikasi):\n${uploads.map((u) => `- ${u}`).join('\n')}`,
     brief && `Brief: ${brief}`,
     `Output yang diminta: ${outputs.join(', ')}.`,
     `Simpan semua hasil di folder output/${id}/ (folder sudah ada, jangan buat folder output lain).`,
@@ -570,7 +579,7 @@ async function createJob(req, res) {
   ];
   const title = brief.length > 80 ? brief.slice(0, 80).replace(/\s+\S*$/, '') + '…' : brief || label;
   const meta = {
-    id, title, mode, platform, engine, brief, source: source || null, upload: uploaded, outputs,
+    id, title, mode, platform, engine, brief, source: source || null, uploads, outputs,
     // Claude Code takes a session id from us; Antigravity reports its own conversation id on start.
     sessionId: engine === 'claude' ? randomUUID() : null, extractTarget, extraDir, ...runOptions,
     status: 'running', createdAt: new Date().toISOString(), revisions: [],

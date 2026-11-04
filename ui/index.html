@@ -254,6 +254,12 @@ textarea.field { min-height: 112px; resize: vertical; line-height: var(--lh-norm
 .drop:hover, .drop.over { border-color: var(--color-primary); color: var(--color-text); background: var(--color-primary-soft); }
 .drop strong { color: var(--color-text); }
 .drop svg.i { width: 22px; height: 22px; }
+.picked { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: var(--space-1); }
+.picked li { display: flex; align-items: center; gap: var(--space-3); min-height: 36px; padding: 0 var(--space-1) 0 var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); font-size: var(--text-sm); }
+.picked li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.picked li small { color: var(--color-text-muted); font: var(--text-xs) var(--font-mono); }
+.picked li button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-text-muted); }
+.picked li button:hover { background: var(--color-desk-hover); color: var(--color-redline); }
 .or { display: block; font: var(--text-xs) var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted); margin-top: var(--space-3); }
 .outs { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .out { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; }
@@ -560,9 +566,10 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
               <div class="ctl">
                 <p class="hint">URL (https://…) atau path lokal ke file .html atau folder kode.</p>
                 <input class="field mono" id="source" name="source" type="text" placeholder="https://contoh.com  atau  /Users/anda/project-lama" autocomplete="off">
-                <span class="or">atau upload screenshot / file HTML</span>
-                <div class="drop" id="drop" tabindex="0" role="button" aria-label="Pilih file"><svg class="i"><use href="#i-upload"/></svg><span id="dropText"></span></div>
-                <input type="file" id="fileInput" accept=".png,.jpg,.jpeg,.webp,.html,.htm" hidden>
+                <span class="or">dan/atau upload file sumber & konteks tambahan</span>
+                <div class="drop" id="drop" tabindex="0" role="button" aria-label="Tambah file"><svg class="i"><use href="#i-upload"/></svg><span id="dropText"></span></div>
+                <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.html,.htm,.css,.js,.md,.txt,.json,.pdf" hidden>
+                <ul class="picked" id="pickedList" aria-label="File terpilih"></ul>
               </div>
             </div>
 
@@ -820,7 +827,10 @@ const readRunOptions = (formEl) => {
   const engine = formEl.dataset.engine;
   return { engine, model: formEl.model.value, effort: engine === 'claude' ? formEl.effort.value : '', caveman: engine === 'claude' && formEl.caveman.checked };
 };
-const DROP_TEXT = 'Tarik file ke sini atau <strong>klik untuk memilih</strong>. Format png, jpg, webp, atau html, maksimal 15MB.';
+const DROP_TEXT = 'Tarik file ke sini atau <strong>klik untuk menambah</strong>. Bisa beberapa file sekaligus: screenshot, HTML/CSS, catatan (md/txt), JSON, atau PDF. Maksimal 10 file, 15MB per file, 40MB total.';
+const MAX_FILES = 10;
+const MAX_FILE_MB = 15;
+const MAX_TOTAL_MB = 40;
 
 let jobs = [];
 let running = false;
@@ -828,7 +838,7 @@ let openTabs = [];        // project ids open as tabs
 let active = 'home';      // 'home' | a SPECIAL key | project id
 let filter = null;        // null | 'design' | 'redesign' | 'running'
 let stream = null;
-let pickedFile = null;
+let pickedFiles = [];
 let runLog = [];          // entries of the newest run in the open project (drives the phase ruler)
 let timerStart = null;
 
@@ -1025,7 +1035,8 @@ function syncForm() {
 function renderTicket() {
   const outputs = [...form.querySelectorAll('[name=outputs]:checked')].map((c) => c.value);
   const redesign = form.mode.value === 'redesign';
-  const source = form.source.value.trim().replace(/^https?:\/\//, '') || pickedFile?.name || '';
+  const url = form.source.value.trim().replace(/^https?:\/\//, '');
+  const source = [url, pickedFiles.length ? `${pickedFiles.length} file upload` : ''].filter(Boolean).join(' + ');
   const engine = form.dataset.engine || 'claude';
   const model = [modelLabel(engine, form.model.value) || 'Default', engine === 'claude' && form.effort.value ? `effort ${EFFORT_NAMES[form.effort.value].toLowerCase()}` : null].filter(Boolean).join(' · ');
   const rows = [
@@ -1046,19 +1057,37 @@ form.addEventListener('change', syncForm);
 form.addEventListener('input', renderTicket);
 const drop = $('#drop');
 const fileInput = $('#fileInput');
-const pick = (file) => {
-  if (!file) return;
-  if (file.size > 15 * 1024 * 1024) { $('#formError').textContent = 'File maksimal 15MB'; return; }
-  pickedFile = file;
-  $('#dropText').innerHTML = `<strong>${esc(file.name)}</strong> · klik untuk ganti`;
+const fmtSize = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+function renderPicked() {
+  const list = $('#pickedList');
+  list.innerHTML = pickedFiles.map((f, i) =>
+    `<li><span title="${esc(f.name)}">${esc(f.name)}</span><small>${fmtSize(f.size)}</small><button type="button" data-i="${i}" aria-label="Hapus ${esc(f.name)}"><svg class="i"><use href="#i-x"/></svg></button></li>`).join('');
+  list.querySelectorAll('button').forEach((b) => (b.onclick = () => {
+    pickedFiles.splice(Number(b.dataset.i), 1);
+    renderPicked();
+  }));
   renderTicket();
+}
+// Adds files to the selection; same name + size counts as already picked.
+const pick = (fileList) => {
+  const problems = [];
+  for (const file of fileList) {
+    if (pickedFiles.some((f) => f.name === file.name && f.size === file.size)) continue;
+    if (pickedFiles.length >= MAX_FILES) { problems.push(`maksimal ${MAX_FILES} file`); break; }
+    if (file.size > MAX_FILE_MB * 1024 * 1024) { problems.push(`${file.name} lebih dari ${MAX_FILE_MB}MB`); continue; }
+    if (pickedFiles.reduce((n, f) => n + f.size, file.size) > MAX_TOTAL_MB * 1024 * 1024) { problems.push(`total lebih dari ${MAX_TOTAL_MB}MB`); break; }
+    pickedFiles.push(file);
+  }
+  $('#formError').textContent = problems.length ? `Tidak ditambahkan: ${problems.join('; ')}.` : '';
+  fileInput.value = '';
+  renderPicked();
 };
 drop.onclick = () => fileInput.click();
 drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
-fileInput.onchange = () => pick(fileInput.files[0]);
+fileInput.onchange = () => pick(fileInput.files);
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
-drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); pick(e.dataTransfer.files[0]); };
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); pick(e.dataTransfer.files); };
 const toBase64 = (file) => new Promise((ok, fail) => {
   const r = new FileReader();
   r.onload = () => ok(String(r.result).split(',')[1]);
@@ -1076,13 +1105,13 @@ form.onsubmit = async (e) => {
     const body = { mode, platform: form.platform.value, brief: form.brief.value, outputs: [...form.querySelectorAll('[name=outputs]:checked')].map((c) => c.value), ...readRunOptions(form) };
     if (mode === 'redesign') {
       body.source = form.source.value;
-      if (pickedFile) body.file = { name: pickedFile.name, data: await toBase64(pickedFile) };
+      body.files = await Promise.all(pickedFiles.map(async (f) => ({ name: f.name, data: await toBase64(f) })));
     }
     const { id } = await api('/api/jobs', { method: 'POST', body: JSON.stringify(body) });
     form.reset();
     setupRunOptions(form, usableEngine(runOpts.engine));
-    pickedFile = null;
-    $('#dropText').innerHTML = DROP_TEXT;
+    pickedFiles = [];
+    renderPicked();
     syncForm();
     await refresh();
     show(id);
