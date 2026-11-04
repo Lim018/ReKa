@@ -349,6 +349,23 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
 .log span { overflow-wrap: anywhere; white-space: pre-wrap; }
 .log .run { grid-template-columns: minmax(0, 1fr) auto; font: var(--w-semibold) var(--text-sm) var(--font-body); padding-top: var(--space-3); color: var(--color-text); }
 .log .run time { font-weight: var(--w-regular); font-family: var(--font-mono); }
+.log .run .ask { grid-column: 1 / -1; margin: var(--space-1) 0 0; padding: var(--space-2) var(--space-3); border-left: 2px solid var(--color-primary); background: var(--color-background); font: var(--w-regular) var(--text-sm)/var(--lh-normal) var(--font-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+.log .run details { grid-column: 1 / -1; font-weight: var(--w-regular); }
+.log .run summary { cursor: pointer; color: var(--color-text-muted); font: var(--text-xs) var(--font-mono); padding: var(--space-1) 0; }
+.log .run summary:hover { color: var(--color-text); }
+.log .run pre { margin: 0; padding: var(--space-3); max-height: 260px; overflow: auto; background: var(--color-desk); border: 1px solid var(--color-border); border-radius: var(--radius-md); font: var(--text-xs)/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text-muted); }
+/* Requests: every prompt the user sent to this project */
+.asks { margin: 0; padding: 0; list-style: none; max-height: 420px; overflow-y: auto; }
+.asks li { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); display: grid; gap: var(--space-2); }
+.asks li:first-child { border-top: 0; }
+.asks .top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); font: var(--text-xs) var(--font-mono); color: var(--color-text-muted); }
+.asks .top b { color: var(--color-text); font-weight: var(--w-semibold); }
+.asks .txt { margin: 0; font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.asks .txt.none { color: var(--color-text-muted); font-style: italic; }
+.asks .src { margin: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); font: var(--text-xs) var(--font-mono); color: var(--color-text-muted); }
+.asks .src a { color: var(--color-primary); text-decoration: none; }
+.asks .src a:hover { text-decoration: underline; }
+.asks .reuse { justify-self: start; min-height: 28px; padding: 0 var(--space-2); font-size: var(--text-xs); }
 .log .result span { color: var(--color-ok); } .log .warn span { color: var(--color-warn); } .log .error span { color: var(--color-redline); }
 .log .live span::after { content: "▍"; color: var(--color-redline); margin-left: 2px; animation: pulse .6s steps(2) infinite; }
 /* Files */
@@ -700,6 +717,10 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
           </div>
 
           <div class="col">
+            <section class="panel" id="requestBox" hidden aria-labelledby="reqTitle">
+              <header><h2 id="reqTitle">Permintaan</h2><span class="k" id="reqCount"></span></header>
+              <ol class="asks" id="asks"></ol>
+            </section>
             <form class="panel" id="reviseForm" hidden novalidate>
               <div class="pad composer">
                 <label class="lab" for="instruction">Lanjutkan session</label>
@@ -1163,7 +1184,9 @@ function logLine(entry) {
   const li = document.createElement('li');
   li.className = entry.kind;
   if (entry.kind === 'run') {
-    li.innerHTML = `<span>${esc(entry.text)}</span><time>${esc(fmtShort(entry.at))}</time>`;
+    li.innerHTML = `<span>${esc(entry.text)}</span><time>${esc(fmtShort(entry.at))}</time>`
+      + (entry.request ? `<p class="ask">${esc(entry.request)}</p>` : '')
+      + (entry.prompt ? `<details><summary>Prompt lengkap ke mesin</summary><pre>${esc(entry.prompt)}</pre></details>` : '');
     timerStart = entry.at ? new Date(entry.at).getTime() : Date.now();
     $('#timerHint').textContent = /^Generate/.test(entry.text) ? 'biasanya 10–20 mnt' : 'revisi 2–10 mnt';
   } else {
@@ -1178,6 +1201,42 @@ function logLine(entry) {
   const runs = log.querySelectorAll('li.run').length;
   $('#logCount').textContent = `${runs} run · ${steps} langkah`;
   renderPhase();
+}
+
+// Every prompt the user sent to a project: the brief, then each follow-up message.
+function renderRequests(job) {
+  const engine = job.engine ?? 'claude';
+  const opts = (o) => [o.model && modelLabel(engine, o.model), o.effort && `effort ${o.effort}`].filter(Boolean).join(' · ');
+  const uploads = job.uploads ?? (job.upload ? [job.upload] : []);
+  const items = [
+    { label: 'Generate awal', at: job.createdAt, text: job.brief, opts: opts(job), first: true },
+    ...(job.revisions ?? []).map((r, i) => ({ label: `Pesan ${i + 1}`, at: r.at, text: r.instruction, opts: opts(r) })),
+  ];
+  // Reuse only makes sense while the follow-up form is shown (not during a run).
+  const canReuse = !$('#reviseForm').hidden;
+  $('#requestBox').hidden = false;
+  $('#reqCount').textContent = `${items.length} prompt`;
+  $('#asks').innerHTML = items.map((it, i) => {
+    const src = it.first ? [
+      job.source && `<span>sumber: ${esc(job.source.replace(/^https?:\/\//, ''))}</span>`,
+      ...uploads.map((u) => {
+        const rel = u.replace(`output/${job.id}/`, '');
+        return `<a href="${jobUrl(job, rel)}" target="_blank" rel="noopener">${esc(rel.split('/').pop())}</a>`;
+      }),
+    ].filter(Boolean).join('') : '';
+    return `<li>
+      <div class="top"><b>${esc(it.label)}</b><span>${esc([fmtShort(it.at), it.opts].filter(Boolean).join(' · '))}</span></div>
+      ${it.text ? `<p class="txt">${esc(it.text)}</p>` : `<p class="txt none">${it.first ? 'Tanpa brief (modernisasi umum).' : 'Kosong.'}</p>`}
+      ${src ? `<p class="src">${src}</p>` : ''}
+      ${it.text && canReuse ? `<button class="btn btn-sm reuse" type="button" data-i="${i}" title="Salin ke kolom Lanjutkan session">Pakai lagi</button>` : ''}
+    </li>`;
+  }).join('');
+  $('#asks').querySelectorAll('.reuse').forEach((b) => (b.onclick = () => {
+    const box = $('#reviseForm').instruction;
+    box.value = items[Number(b.dataset.i)].text;
+    box.focus();
+  }));
+  $('#asks').scrollTop = $('#asks').scrollHeight;
 }
 
 let shownJob = null;
@@ -1269,6 +1328,7 @@ async function renderJob(id) {
   if (has('index.html')) bar.insertAdjacentHTML('beforeend',
     `<span class="spacer"></span><a class="open" href="${url('index.html')}" target="_blank" rel="noopener">Buka di tab baru<svg class="i"><use href="#i-ext"/></svg></a>`);
 
+  renderRequests(job);
   $('#suggestBox').hidden = !job.suggestions?.length;
   $('#suggestions').innerHTML = '';
   for (const text of job.suggestions ?? []) {

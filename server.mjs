@@ -362,7 +362,8 @@ function runJob(id, engineKey, prompt, opts) {
   const engine = ENGINES[engineKey];
   const proc = spawn(engine.command, engine.args(prompt, { id, ...opts }), { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   live.set(id, { proc, listeners: new Set() });
-  pushLog(id, { kind: 'run', text: opts.label });
+  // The run header keeps what the user asked and the full prompt sent, so the UI can show both later.
+  pushLog(id, { kind: 'run', text: opts.label, request: opts.request ?? null, prompt });
 
   const run = {
     result: null, seen: new Set(), texts: {},
@@ -586,7 +587,7 @@ async function createJob(req, res) {
   };
   writeMeta(id, meta);
   runJob(id, engine, lines.filter(Boolean).join('\n'), {
-    label: runLabel('Generate awal', engine, runOptions), sessionId: meta.sessionId, resume: false, sessionName: `ReKa: ${title}`,
+    label: runLabel('Generate awal', engine, runOptions), request: brief || null, sessionId: meta.sessionId, resume: false, sessionName: `ReKa: ${title}`,
     ...runOptions, extractTarget, extraDir,
   });
   sendJson(res, 201, { id });
@@ -634,7 +635,7 @@ async function reviseJob(req, res, id) {
         engine === 'antigravity' && ENGINES.antigravity.rules(id, meta.extractTarget),
       ].filter(Boolean).join('\n');
   runJob(id, engine, prompt, {
-    label: runLabel(`Pesan: ${text}`, engine, runOptions), sessionId, resume, sessionName: `ReKa: ${meta.title ?? id}`, ...runOptions,
+    label: runLabel('Pesan lanjutan', engine, runOptions), request: text, sessionId, resume, sessionName: `ReKa: ${meta.title ?? id}`, ...runOptions,
     extractTarget: meta.extractTarget ?? null, extraDir: meta.extraDir ?? null,
   });
   sendJson(res, 202, { id });
