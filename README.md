@@ -14,7 +14,8 @@ npx playwright install chromium
 npm start
 ```
 Buka http://localhost:4000. Pilih mode dan output, isi brief atau sumber (URL, path lokal, upload), lalu
-klik Generate. Progres tampil live. Hasil bisa dilihat (desktop, mobile, HTML, design.md, sebelum/sesudah),
+klik Generate. Untuk redesign bisa ditambah **referensi desain** (gambar/PDF atau sampai 3 URL) berisi
+tampilan yang diinginkan. Nuansanya diambil tanpa disalin, dan arah A dibuat paling dekat dengan referensi. Progres tampil live. Hasil bisa dilihat (desktop, mobile, HTML, design.md, sebelum/sesudah),
 diunduh, dan direvisi dari halaman yang sama.
 
 Di belakang layar server menjalankan `claude -p` (Claude Code headless) dengan login langganan Anda.
