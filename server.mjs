@@ -26,6 +26,10 @@ const CAVEMAN_RECEIPTS = join(homedir(), '.caveman', 'receipts');
 // Uploads give the agent context: screenshots, the old page, and notes/specs it can read.
 const UPLOAD_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.html', '.htm', '.css', '.js', '.md', '.txt', '.json', '.pdf']);
 const MAX_UPLOADS = 10;
+// Design references (the look the user wants): images or PDFs, plus a few URLs captured with extract.mjs.
+const REFERENCE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf']);
+const MAX_REFERENCE_FILES = 6;
+const MAX_REFERENCE_URLS = 3;
 const MAX_BODY = 60 * 1024 * 1024;
 const JOB_TIMEOUT_MS = 30 * 60 * 1000;
 const MIME = {
@@ -248,12 +252,12 @@ const ENGINES = {
     resumeCommand: (sessionId) => `claude --resume ${sessionId}`,
     // caveman: on = its hooks plus its MCP server (the only MCP loaded); off = all hooks disabled for this
     // run (the caveman hooks live with the user's other hooks, which cannot be removed one by one).
-    args(prompt, { sessionId, resume, sessionName, model, effort, caveman, extractTarget, extraDir }) {
+    args(prompt, { sessionId, resume, sessionName, model, effort, caveman, extractTargets = [], extraDir }) {
       const allowed = [
         'Read', 'Glob', 'Grep', 'Skill', 'Write(./output/**)', 'Edit(./output/**)',
         'Bash(node scripts/validate.mjs:*)', 'Bash(node scripts/lint.mjs:*)', 'Bash(node scripts/render.mjs:*)',
       ];
-      if (extractTarget) allowed.push(`Bash(node scripts/extract.mjs ${extractTarget}:*)`);
+      for (const t of extractTargets) allowed.push(`Bash(node scripts/extract.mjs ${t}:*)`);
       const cavemanMcp = caveman ? cavemanMcpConfig() : null;
       if (cavemanMcp) allowed.push('mcp__caveman');
       const args = [
@@ -299,16 +303,16 @@ const ENGINES = {
     command: 'agy',
     invokeSkill: 'Gunakan skill design-generator (.agents/skills/design-generator/SKILL.md) dan ikuti seluruh alurnya.',
     resumeCommand: (sessionId) => `agy --conversation ${sessionId}`,
-    rules: (id, extractTarget) => [
-      `Batasan mesin ini: perintah shell yang diizinkan hanya node scripts/validate.mjs, node scripts/lint.mjs, node scripts/render.mjs${extractTarget ? `, dan node scripts/extract.mjs ${extractTarget}` : ''} (dijalankan dari root project, tanpa cd, && atau pipe).`,
+    rules: (id, extractTargets = []) => [
+      `Batasan mesin ini: perintah shell yang diizinkan hanya node scripts/validate.mjs, node scripts/lint.mjs, node scripts/render.mjs${extractTargets.map((t) => `, node scripts/extract.mjs ${t}`).join('')} (dijalankan dari root project, tanpa cd, && atau pipe).`,
       `Menulis file hanya di output/${id}/. Untuk melihat PNG gunakan tool baca file. Shell lain, browser, web, dan MCP akan ditolak dan menghentikan run.`,
     ].join('\n'),
-    args(prompt, { id, sessionId, resume, model, extractTarget, extraDir }) {
+    args(prompt, { id, sessionId, resume, model, extractTargets = [], extraDir }) {
       const allow = [
         'command(node scripts/validate.mjs)', 'command(node scripts/lint.mjs)', 'command(node scripts/render.mjs)',
         `write_file(${join(OUTPUT, id)})`,
       ];
-      if (extractTarget) allow.push(`command(node scripts/extract.mjs ${extractTarget})`);
+      for (const t of extractTargets) allow.push(`command(node scripts/extract.mjs ${t})`);
       if (extraDir) allow.push(`read_file(${extraDir})`);
       const args = [
         '-p', prompt,
@@ -498,6 +502,42 @@ function checkUsage() {
 
 // ---- Request handlers ------------------------------------------------------------------------
 
+// Safe, unique names: two files called index.html become index.html and index-2.html.
+function safeFileNames(files, allowed) {
+  const taken = new Set();
+  return files.map((f) => {
+    const clean = basename(String(f?.name ?? '')).replace(/[^\w.-]+/g, '_').replace(/^\.+/, '') || 'file';
+    const ext = extname(clean).toLowerCase();
+    if (!allowed.has(ext)) throw new HttpError(400, `${clean}: format tidak didukung (${[...allowed].join(', ')})`);
+    let name = clean;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${clean.slice(0, -ext.length)}-${n}${ext}`;
+    taken.add(name.toLowerCase());
+    return name;
+  });
+}
+
+// Writes uploaded files (base64) into output/<id>/<sub>/ and returns their project-relative paths.
+function saveFiles(id, sub, names, files) {
+  const paths = names.map((name) => `output/${id}/${sub}/${name}`);
+  if (paths.length) mkdirSync(join(OUTPUT, id, sub), { recursive: true });
+  paths.forEach((rel, i) => writeFileSync(join(ROOT, rel), Buffer.from(String(files[i].data ?? ''), 'base64')));
+  return paths;
+}
+
+function parseReferenceUrls(value) {
+  const list = (Array.isArray(value) ? value : String(value ?? '').split('\n')).map((u) => String(u).trim()).filter(Boolean);
+  if (list.length > MAX_REFERENCE_URLS) throw new HttpError(400, `Maksimal ${MAX_REFERENCE_URLS} URL referensi`);
+  return [...new Set(list.map((u) => {
+    let url;
+    try { url = new URL(u); } catch { throw new HttpError(400, `URL referensi tidak valid: ${u}`); }
+    if (!/^https?:$/.test(url.protocol) || /\s/.test(url.href)) throw new HttpError(400, `URL referensi harus http(s): ${u}`);
+    return url.href;
+  }))];
+}
+
+// Every target extract.mjs may run on for a project: the redesign source and the reference URLs.
+const extractTargetsOf = (meta) => [meta.extractTarget, ...(meta.referenceUrls ?? [])].filter(Boolean);
+
 async function createJob(req, res) {
   if (isRunning()) throw new HttpError(409, 'Masih ada proses generate yang berjalan');
   const body = await readBody(req);
@@ -535,33 +575,27 @@ async function createJob(req, res) {
   if (mode === 'design' && !brief) throw new HttpError(400, 'Isi brief desain');
   const files = Array.isArray(body.files) ? body.files : [];
   if (files.length > MAX_UPLOADS) throw new HttpError(400, `Maksimal ${MAX_UPLOADS} file upload`);
-  // Safe, unique names: two files called index.html become index.html and index-2.html.
-  const taken = new Set();
-  const uploadNames = files.map((f) => {
-    const clean = basename(String(f?.name ?? '')).replace(/[^\w.-]+/g, '_').replace(/^\.+/, '') || 'file';
-    const ext = extname(clean).toLowerCase();
-    if (!UPLOAD_EXT.has(ext)) throw new HttpError(400, `${clean}: format tidak didukung (${[...UPLOAD_EXT].join(', ')})`);
-    let name = clean;
-    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${clean.slice(0, -ext.length)}-${n}${ext}`;
-    taken.add(name.toLowerCase());
-    return name;
-  });
+  const uploadNames = safeFileNames(files, UPLOAD_EXT);
   if (mode === 'redesign' && !source && !files.length) throw new HttpError(400, 'Redesign butuh URL, path lokal, atau file upload');
+  const refFiles = Array.isArray(body.references?.files) ? body.references.files : [];
+  if (refFiles.length > MAX_REFERENCE_FILES) throw new HttpError(400, `Maksimal ${MAX_REFERENCE_FILES} file referensi`);
+  const referenceNames = safeFileNames(refFiles, REFERENCE_EXT);
+  const referenceUrls = parseReferenceUrls(body.references?.urls);
 
   const label = brief || (sourceKind === 'url' ? new URL(source).hostname : basename(source || uploadNames[0] || 'redesign'));
   const id = newJobId(label);
   const dir = join(OUTPUT, id);
   mkdirSync(dir, { recursive: true });
 
-  const uploads = uploadNames.map((name) => `output/${id}/input/${name}`);
-  if (uploads.length) mkdirSync(join(dir, 'input'), { recursive: true });
-  uploads.forEach((rel, i) => writeFileSync(join(ROOT, rel), Buffer.from(String(files[i].data ?? ''), 'base64')));
+  const uploads = saveFiles(id, 'input', uploadNames, files);
+  const references = saveFiles(id, 'reference', referenceNames, refFiles);
 
   // The extract script may only be pointed at the source the user gave (URL, local HTML, or the first uploaded HTML).
   const htmlUpload = uploads.find((u) => /\.html?$/i.test(u)) ?? null;
   const extractTarget = mode !== 'redesign' ? null
     : sourceKind === 'url' || (sourceKind === 'file' && /\.html?$/i.test(source)) ? source
     : htmlUpload;
+  const extractTargets = [extractTarget, ...referenceUrls].filter(Boolean);
 
   const lines = [
     ENGINES[engine].invokeSkill,
@@ -569,6 +603,11 @@ async function createJob(req, res) {
     `Platform: ${PLATFORMS[platform]}.`,
     sourceKind && `Sumber (${sourceKind}): ${source}`,
     uploads.length && `File upload dari user (baca semuanya sebagai sumber dan konteks tambahan: screenshot sistem lama, halaman, catatan, atau spesifikasi):\n${uploads.map((u) => `- ${u}`).join('\n')}`,
+    (references.length || referenceUrls.length) && [
+      `Referensi desain yang diinginkan user (tampilan yang dituju, bukan sistem lama; ikuti bagian 3.0 skill):`,
+      ...references.map((r) => `- ${r}`),
+      ...referenceUrls.map((u, i) => `- ${u} (ambil dulu: node scripts/extract.mjs ${u} output/${id}/reference/url-${i + 1})`),
+    ].join('\n'),
     brief && `Brief: ${brief}`,
     `Output yang diminta: ${outputs.join(', ')}.`,
     `Simpan semua hasil di folder output/${id}/ (folder sudah ada, jangan buat folder output lain).`,
@@ -576,11 +615,11 @@ async function createJob(req, res) {
     `Jalankan semua tahap skill, termasuk arah kreatif (bagian 3), kritik diri dengan rubrik (bagian 7), dan suggestions.json (bagian 8).`,
     `Jangan bertanya ke user; ambil asumsi dan catat di design.md.`,
     ANTISLOP_SESSION,
-    engine === 'antigravity' && ENGINES.antigravity.rules(id, extractTarget),
+    engine === 'antigravity' && ENGINES.antigravity.rules(id, extractTargets),
   ];
   const title = brief.length > 80 ? brief.slice(0, 80).replace(/\s+\S*$/, '') + '…' : brief || label;
   const meta = {
-    id, title, mode, platform, engine, brief, source: source || null, uploads, outputs,
+    id, title, mode, platform, engine, brief, source: source || null, uploads, references, referenceUrls, outputs,
     // Claude Code takes a session id from us; Antigravity reports its own conversation id on start.
     sessionId: engine === 'claude' ? randomUUID() : null, extractTarget, extraDir, ...runOptions,
     status: 'running', createdAt: new Date().toISOString(), revisions: [],
@@ -588,7 +627,7 @@ async function createJob(req, res) {
   writeMeta(id, meta);
   runJob(id, engine, lines.filter(Boolean).join('\n'), {
     label: runLabel('Generate awal', engine, runOptions), request: brief || null, sessionId: meta.sessionId, resume: false, sessionName: `ReKa: ${title}`,
-    ...runOptions, extractTarget, extraDir,
+    ...runOptions, extractTargets, extraDir,
   });
   sendJson(res, 201, { id });
 }
@@ -623,7 +662,7 @@ async function reviseJob(req, res, id) {
         `"Coba arah B/C" berarti membangun ulang dengan arah itu dari bagian Arah kreatif di design.md.`,
         `Jika ini pertanyaan, jawab saja tanpa mengubah file. Jangan bertanya balik ke user.`,
         ANTISLOP_SESSION,
-        engine === 'antigravity' && ENGINES.antigravity.rules(id, meta.extractTarget),
+        engine === 'antigravity' && ENGINES.antigravity.rules(id, extractTargetsOf(meta)),
       ].filter(Boolean).join('\n')
     : [
         ENGINES[engine].invokeSkill,
@@ -632,11 +671,11 @@ async function reviseJob(req, res, id) {
         `Ikuti alur penyesuaian di bagian 9 supaya semua output tetap sinkron, termasuk lint dan suggestions.json. Output yang diminta: ${outputs}.`,
         `Jangan bertanya ke user.`,
         ANTISLOP_SESSION,
-        engine === 'antigravity' && ENGINES.antigravity.rules(id, meta.extractTarget),
+        engine === 'antigravity' && ENGINES.antigravity.rules(id, extractTargetsOf(meta)),
       ].filter(Boolean).join('\n');
   runJob(id, engine, prompt, {
     label: runLabel('Pesan lanjutan', engine, runOptions), request: text, sessionId, resume, sessionName: `ReKa: ${meta.title ?? id}`, ...runOptions,
-    extractTarget: meta.extractTarget ?? null, extraDir: meta.extraDir ?? null,
+    extractTargets: extractTargetsOf(meta), extraDir: meta.extraDir ?? null,
   });
   sendJson(res, 202, { id });
 }

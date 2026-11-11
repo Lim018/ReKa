@@ -260,6 +260,7 @@ textarea.field { min-height: 112px; resize: vertical; line-height: var(--lh-norm
 .picked li small { color: var(--color-text-muted); font: var(--text-xs) var(--font-mono); }
 .picked li button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-text-muted); }
 .picked li button:hover { background: var(--color-desk-hover); color: var(--color-redline); }
+.refurls { min-height: 0; resize: vertical; }
 .or { display: block; font: var(--text-xs) var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted); margin-top: var(--space-3); }
 .outs { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .out { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; }
@@ -590,6 +591,19 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
               </div>
             </div>
 
+            <div class="q" id="referenceFields" hidden>
+              <span class="num" aria-hidden="true"></span>
+              <label class="lab" for="refUrls">Referensi desain (opsional)</label>
+              <div class="ctl">
+                <p class="hint">Contoh tampilan yang Anda inginkan, dari situs lain, Dribbble, atau screenshot app. Nuansanya diambil (warna, tipografi, kepadatan, bentuk komponen), bukan disalin. Arah A dibuat paling dekat dengan referensi.</p>
+                <textarea class="field mono refurls" id="refUrls" name="refUrls" rows="2" placeholder="https://situs-yang-anda-suka.com  (satu URL per baris, maksimal 3)" autocomplete="off"></textarea>
+                <span class="or">dan/atau upload gambar referensi</span>
+                <div class="drop" id="refDrop" tabindex="0" role="button" aria-label="Tambah gambar referensi"><svg class="i"><use href="#i-upload"/></svg><span id="refDropText"></span></div>
+                <input type="file" id="refInput" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.pdf" hidden>
+                <ul class="picked" id="refList" aria-label="Referensi terpilih"></ul>
+              </div>
+            </div>
+
             <div class="q">
               <span class="num" aria-hidden="true"></span>
               <label class="lab" for="brief" id="briefLabel">Brief</label>
@@ -848,10 +862,11 @@ const readRunOptions = (formEl) => {
   const engine = formEl.dataset.engine;
   return { engine, model: formEl.model.value, effort: engine === 'claude' ? formEl.effort.value : '', caveman: engine === 'claude' && formEl.caveman.checked };
 };
-const DROP_TEXT = 'Tarik file ke sini atau <strong>klik untuk menambah</strong>. Bisa beberapa file sekaligus: screenshot, HTML/CSS, catatan (md/txt), JSON, atau PDF. Maksimal 10 file, 15MB per file, 40MB total.';
-const MAX_FILES = 10;
+const DROP_TEXT = 'Tarik file ke sini atau <strong>klik untuk menambah</strong>. Bisa beberapa file sekaligus: screenshot, HTML/CSS, catatan (md/txt), JSON, atau PDF. Maksimal 10 file, 15MB per file.';
+const REF_DROP_TEXT = 'Tarik gambar ke sini atau <strong>klik untuk menambah</strong>: screenshot, mockup, moodboard (PNG/JPG/WebP/GIF/SVG) atau PDF. Maksimal 6 file.';
 const MAX_FILE_MB = 15;
-const MAX_TOTAL_MB = 40;
+const MAX_TOTAL_MB = 40;      // source files and references together
+const MAX_REF_URLS = 3;
 
 let jobs = [];
 let running = false;
@@ -859,7 +874,6 @@ let openTabs = [];        // project ids open as tabs
 let active = 'home';      // 'home' | a SPECIAL key | project id
 let filter = null;        // null | 'design' | 'redesign' | 'running'
 let stream = null;
-let pickedFiles = [];
 let runLog = [];          // entries of the newest run in the open project (drives the phase ruler)
 let timerStart = null;
 
@@ -1032,7 +1046,6 @@ $('#search').oninput = renderHome;
 
 // ---- New design: work order ----
 const form = $('#jobForm');
-$('#dropText').innerHTML = DROP_TEXT;
 const BRIEF = {
   design: ['Brief', 'Satu kalimat sudah cukup. Mesin AI akan menyimpulkan audiens, nada, konten, dan arah kreatifnya.'],
   redesign: ['Arah perubahan (opsional)', 'Kosongkan untuk modernisasi umum: hierarki, keterbacaan, dan aksesibilitas.'],
@@ -1044,6 +1057,7 @@ const PLACEHOLDER = {
 function syncForm() {
   const redesign = form.mode.value === 'redesign';
   $('#redesignFields').hidden = !redesign;
+  $('#referenceFields').hidden = !redesign;
   const [label, hint] = BRIEF[form.mode.value];
   $('#briefLabel').textContent = label;
   $('#briefHint').textContent = hint;
@@ -1057,13 +1071,16 @@ function renderTicket() {
   const outputs = [...form.querySelectorAll('[name=outputs]:checked')].map((c) => c.value);
   const redesign = form.mode.value === 'redesign';
   const url = form.source.value.trim().replace(/^https?:\/\//, '');
-  const source = [url, pickedFiles.length ? `${pickedFiles.length} file upload` : ''].filter(Boolean).join(' + ');
+  const source = [url, sourcePicker.files.length ? `${sourcePicker.files.length} file upload` : ''].filter(Boolean).join(' + ');
+  const refUrls = refUrlList();
+  const refs = [refPicker.files.length && `${refPicker.files.length} gambar`, refUrls.length && `${refUrls.length} URL`].filter(Boolean).join(' + ');
   const engine = form.dataset.engine || 'claude';
   const model = [modelLabel(engine, form.model.value) || 'Default', engine === 'claude' && form.effort.value ? `effort ${EFFORT_NAMES[form.effort.value].toLowerCase()}` : null].filter(Boolean).join(' · ');
   const rows = [
     ['Mode', redesign ? 'Redesign' : 'Design', redesign ? 'r' : ''],
     ['Platform', form.platform.value === 'mobile' ? 'Mobile app' : 'Web', ''],
     redesign && ['Sumber', source || 'belum diisi', source ? 'mono' : 'empty'],
+    redesign && (refUrls.length > MAX_REF_URLS ? ['Referensi', `maksimal ${MAX_REF_URLS} URL`, 'empty r'] : ['Referensi', refs || 'tidak ada', refs ? '' : 'empty']),
     ['Output', outputs.join(', ') || 'pilih minimal satu', outputs.length ? '' : 'empty r'],
     ['Mesin', ENGINE_LABEL[engine], ''],
     ['Model', model, ''],
@@ -1072,43 +1089,55 @@ function renderTicket() {
   ].filter(Boolean);
   $('#ticket').innerHTML = rows.map(([k, v, cls]) => `<dt>${k}</dt><dd class="${cls}">${esc(v)}</dd>`).join('');
   $('#ticketNo').textContent = `frame ▸${String(jobs.length + 1).padStart(2, '0')}`;
-  $('#submitBtn').disabled = running || !outputs.length || (redesign && !source);
+  $('#submitBtn').disabled = running || !outputs.length || (redesign && !source) || (redesign && refUrls.length > MAX_REF_URLS);
 }
 form.addEventListener('change', syncForm);
 form.addEventListener('input', renderTicket);
-const drop = $('#drop');
-const fileInput = $('#fileInput');
 const fmtSize = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
-function renderPicked() {
-  const list = $('#pickedList');
-  list.innerHTML = pickedFiles.map((f, i) =>
-    `<li><span title="${esc(f.name)}">${esc(f.name)}</span><small>${fmtSize(f.size)}</small><button type="button" data-i="${i}" aria-label="Hapus ${esc(f.name)}"><svg class="i"><use href="#i-x"/></svg></button></li>`).join('');
-  list.querySelectorAll('button').forEach((b) => (b.onclick = () => {
-    pickedFiles.splice(Number(b.dataset.i), 1);
-    renderPicked();
-  }));
-  renderTicket();
+const pickers = [];
+const pickedBytes = () => pickers.reduce((n, p) => n + p.files.reduce((m, f) => m + f.size, 0), 0);
+// A drop zone + hidden file input + list of picked files. All pickers share the MAX_TOTAL_MB budget.
+function filePicker({ drop, input, list, text, max }) {
+  const picker = { files: [] };
+  pickers.push(picker);
+  drop.querySelector('span').innerHTML = text;
+  picker.render = () => {
+    list.innerHTML = picker.files.map((f, i) =>
+      `<li><span title="${esc(f.name)}">${esc(f.name)}</span><small>${fmtSize(f.size)}</small><button type="button" data-i="${i}" aria-label="Hapus ${esc(f.name)}"><svg class="i"><use href="#i-x"/></svg></button></li>`).join('');
+    list.querySelectorAll('button').forEach((b) => (b.onclick = () => {
+      picker.files.splice(Number(b.dataset.i), 1);
+      picker.render();
+    }));
+    renderTicket();
+  };
+  picker.clear = () => { picker.files = []; picker.render(); };
+  // Adds files to the selection; same name + size counts as already picked.
+  const pick = (fileList) => {
+    const problems = [];
+    const ok = new RegExp(`(${input.accept.split(',').map((e) => e.replace('.', '\\.')).join('|')})$`, 'i');
+    for (const file of fileList) {
+      if (picker.files.some((f) => f.name === file.name && f.size === file.size)) continue;
+      if (!ok.test(file.name)) { problems.push(`${file.name} formatnya tidak didukung`); continue; }
+      if (picker.files.length >= max) { problems.push(`maksimal ${max} file`); break; }
+      if (file.size > MAX_FILE_MB * 1024 * 1024) { problems.push(`${file.name} lebih dari ${MAX_FILE_MB}MB`); continue; }
+      if (pickedBytes() + file.size > MAX_TOTAL_MB * 1024 * 1024) { problems.push(`total semua upload lebih dari ${MAX_TOTAL_MB}MB`); break; }
+      picker.files.push(file);
+    }
+    $('#formError').textContent = problems.length ? `Tidak ditambahkan: ${problems.join('; ')}.` : '';
+    input.value = '';
+    picker.render();
+  };
+  drop.onclick = () => input.click();
+  drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } };
+  input.onchange = () => pick(input.files);
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); pick(e.dataTransfer.files); };
+  return picker;
 }
-// Adds files to the selection; same name + size counts as already picked.
-const pick = (fileList) => {
-  const problems = [];
-  for (const file of fileList) {
-    if (pickedFiles.some((f) => f.name === file.name && f.size === file.size)) continue;
-    if (pickedFiles.length >= MAX_FILES) { problems.push(`maksimal ${MAX_FILES} file`); break; }
-    if (file.size > MAX_FILE_MB * 1024 * 1024) { problems.push(`${file.name} lebih dari ${MAX_FILE_MB}MB`); continue; }
-    if (pickedFiles.reduce((n, f) => n + f.size, file.size) > MAX_TOTAL_MB * 1024 * 1024) { problems.push(`total lebih dari ${MAX_TOTAL_MB}MB`); break; }
-    pickedFiles.push(file);
-  }
-  $('#formError').textContent = problems.length ? `Tidak ditambahkan: ${problems.join('; ')}.` : '';
-  fileInput.value = '';
-  renderPicked();
-};
-drop.onclick = () => fileInput.click();
-drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
-fileInput.onchange = () => pick(fileInput.files);
-drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
-drop.ondragleave = () => drop.classList.remove('over');
-drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); pick(e.dataTransfer.files); };
+const sourcePicker = filePicker({ drop: $('#drop'), input: $('#fileInput'), list: $('#pickedList'), text: DROP_TEXT, max: 10 });
+const refPicker = filePicker({ drop: $('#refDrop'), input: $('#refInput'), list: $('#refList'), text: REF_DROP_TEXT, max: 6 });
+const refUrlList = () => form.refUrls.value.split('\n').map((u) => u.trim()).filter(Boolean);
 const toBase64 = (file) => new Promise((ok, fail) => {
   const r = new FileReader();
   r.onload = () => ok(String(r.result).split(',')[1]);
@@ -1126,13 +1155,16 @@ form.onsubmit = async (e) => {
     const body = { mode, platform: form.platform.value, brief: form.brief.value, outputs: [...form.querySelectorAll('[name=outputs]:checked')].map((c) => c.value), ...readRunOptions(form) };
     if (mode === 'redesign') {
       body.source = form.source.value;
-      body.files = await Promise.all(pickedFiles.map(async (f) => ({ name: f.name, data: await toBase64(f) })));
+      body.files = await Promise.all(sourcePicker.files.map(async (f) => ({ name: f.name, data: await toBase64(f) })));
+      body.references = {
+        urls: refUrlList(),
+        files: await Promise.all(refPicker.files.map(async (f) => ({ name: f.name, data: await toBase64(f) }))),
+      };
     }
     const { id } = await api('/api/jobs', { method: 'POST', body: JSON.stringify(body) });
     form.reset();
     setupRunOptions(form, usableEngine(runOpts.engine));
-    pickedFiles = [];
-    renderPicked();
+    pickers.forEach((p) => p.clear());
     syncForm();
     await refresh();
     show(id);
@@ -1208,6 +1240,10 @@ function renderRequests(job) {
   const engine = job.engine ?? 'claude';
   const opts = (o) => [o.model && modelLabel(engine, o.model), o.effort && `effort ${o.effort}`].filter(Boolean).join(' · ');
   const uploads = job.uploads ?? (job.upload ? [job.upload] : []);
+  const fileLink = (u, kind) => {
+    const rel = u.replace(`output/${job.id}/`, '');
+    return `<a href="${jobUrl(job, rel)}" target="_blank" rel="noopener">${kind ? `${kind}: ` : ''}${esc(rel.split('/').pop())}</a>`;
+  };
   const items = [
     { label: 'Generate awal', at: job.createdAt, text: job.brief, opts: opts(job), first: true },
     ...(job.revisions ?? []).map((r, i) => ({ label: `Pesan ${i + 1}`, at: r.at, text: r.instruction, opts: opts(r) })),
@@ -1219,10 +1255,9 @@ function renderRequests(job) {
   $('#asks').innerHTML = items.map((it, i) => {
     const src = it.first ? [
       job.source && `<span>sumber: ${esc(job.source.replace(/^https?:\/\//, ''))}</span>`,
-      ...uploads.map((u) => {
-        const rel = u.replace(`output/${job.id}/`, '');
-        return `<a href="${jobUrl(job, rel)}" target="_blank" rel="noopener">${esc(rel.split('/').pop())}</a>`;
-      }),
+      ...uploads.map(fileLink),
+      ...(job.references ?? []).map((u) => fileLink(u, 'referensi')),
+      ...(job.referenceUrls ?? []).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">referensi: ${esc(u.replace(/^https?:\/\//, ''))}</a>`),
     ].filter(Boolean).join('') : '';
     return `<li>
       <div class="top"><b>${esc(it.label)}</b><span>${esc([fmtShort(it.at), it.opts].filter(Boolean).join(' · '))}</span></div>
